@@ -1,0 +1,16 @@
+# Ignore artifacts:
+.next
+node_modules
+build
+coverage
+.vercel
+.git
+
+# Ignore all HTML files:
+*.html
+
+# Ignore specific files
+.gitignore
+.env*
+*.lock
+bun.lockb

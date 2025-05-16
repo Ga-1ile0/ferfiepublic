@@ -1,0 +1,252 @@
+@import 'tailwindcss';
+
+/* OnchainKit theme overrides */
+
+@layer base {
+    :root
+    .default-light,
+    .default-dark,
+    .base,
+    .cyberpunk,
+    .hacker {
+      /* Override specific variables as needed */
+      --ock-font-family: var(--font-gatur);
+      --ock-border-radius: 0.5rem !important;
+      --ock-text-primary: #000000;
+    }
+  }
+
+:root {
+    --custom-dark: 'bg-black rounded-md';
+    --toastify-font-family: inherit;
+  /* Base colors */
+  --background: #00000080;
+  --foreground: #333333;
+
+  /* Primary palette - vibrant but friendly colors */
+  --primary: #4a6fff; /* Bright blue - trustworthy, calm */
+  --primary-foreground: #ffffff;
+
+  /* Secondary palette */
+  --secondary: #ff8a65; /* Coral - warm, energetic */
+  --secondary-foreground: #ffffff;
+
+  /* Accent colors */
+  --accent: #ffd166; /* Sunny yellow - cheerful, optimistic */
+  --accent-foreground: #333333;
+
+  /* Success, warning, destructive states */
+  --success: #66bb6a; /* Friendly green */
+  --success-foreground: #ffffff;
+  --warning: #ffca28; /* Soft amber */
+  --warning-foreground: #333333;
+  --destructive: #ff5252; /* Soft red - less harsh than traditional red */
+  --destructive-foreground: #ffffff;
+
+  /* UI element colors */
+  --card: #ffffff;
+  --card-foreground: #333333;
+  --popover: #ffffff;
+  --popover-foreground: #333333;
+  --muted: #a3cef1;
+  --muted-foreground: #737373;
+
+  /* Border and input colors */
+  --border: #a3cef1;
+  --input: #a3cef1;
+  --input-foreground: #333333;
+
+  /* Ring for focus states - using primary color */
+  --ring: #4a6fff;
+
+  /* Radius for rounded corners - more rounded for child-friendly UI */
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --toastify-font-family: inherit;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+.Toastify__toast-body { font-family: var(--font-gatur); }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --toastify-font-family: inherit;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    /* Base colors - slightly lighter than pure black for better readability */
+    --background: #121212;
+    --foreground: #ffffff;
+
+    /* Primary palette - slightly muted for dark mode */
+    --primary: #738fff;
+    --primary-foreground: #ffffff;
+
+    /* Secondary palette */
+    --secondary: #ff9d80;
+    --secondary-foreground: #ffffff;
+
+    /* Accent colors - slightly muted for dark mode */
+    --accent: #ffd980;
+    --accent-foreground: #333333;
+
+    /* Success, warning, destructive states */
+    --success: #81c784;
+    --success-foreground: #ffffff;
+    --warning: #ffd54f;
+    --warning-foreground: #333333;
+    --destructive: #ff7373;
+    --destructive-foreground: #ffffff;
+
+    /* UI element colors */
+    --card: #1e1e1e;
+    --card-foreground: #a3cef1;
+    --popover: #1e1e1e;
+    --popover-foreground: #a3cef1;
+    --muted: #2a2a2a;
+    --muted-foreground: #a3a3a3;
+
+    /* Border and input colors */
+    --border: #a3cef1;
+    --input: #2a2a2a;
+    --input-foreground: #ffffff;
+
+    /* Ring for focus states */
+    --ring: #738fff;
+  }
+}
+.font-gatur {
+  font-family: var(--font-gatur);
+}
+
+body {
+    --toastify-font-family: inherit;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-gatur);
+  font-size: 16px;
+  line-height: 1.5;
+  border-radius: var(--radius);
+}
+
+/* Add rounded corners to common elements */
+button,
+input,
+select,
+textarea,
+.card,
+.dialog {
+  border-radius: var(--radius);
+  transition: all 0.2s ease;
+}
+
+/* Add subtle animations for interactive elements */
+button:hover,
+a:hover {
+  transform: translateY(-2px);
+}
+
+@layer utilities {
+    :root
+    .default-light,
+    .default-dark,
+    .base,
+    .cyberpunk,
+    .hacker {
+      /* Override specific variables as needed */
+      --ock-font-family: var(--font-gatur);
+      --ock-border-radius: 0.5rem !important;
+      --ock-text-primary: #000000;
+    }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-shadow-custom {
+    text-shadow:
+      -0.5px 0.5px #000000,
+      -1px 1px #000000,
+      -1.5px 1.5px #000000,
+      -2px 2px #000000,
+      -2.5px 2.5px #000000,
+      -3px 3px #000000,
+      -3.5px 3.5px #000000,
+      -4px 4px #000000,
+      -4.5px 4.5px #000000,
+      -5px 5px #000000,
+      -5.5px 5.5px #000000,
+      -6px 6px #000000;
+  }
+  .text-shadow-small {
+    text-shadow:
+      -0.5px 0.5px #000000,
+      -1px 1px #000000,
+      -1.5px 1.5px #000000,
+      -2px 2px #000000;
+  }
+  .text-shadow-rust {
+    text-shadow:
+      -0.5px 0.5px #9c6220,
+      -1px 1px #9c6220;
+  }
+  .text-stroke {
+    -webkit-text-stroke-width: 1px;
+    -webkit-text-stroke-color: #000000;
+  }
+}
+
+.custom-dark {
+    --bg-black: #000000 !important;
+    --rounded-md: 0.5rem !important;
+    --ock-border-radius: 0.5rem !important;
+    --ock-border-radius-inner: 0.25rem !important;
+    --ock-text-inverse: #1f2937 !important;
+    --ock-text-foreground: #f9fafb;
+    --ock-text-foreground-muted: #9ca3af;
+    --ock-text-error: #d1d5db;
+    --ock-text-primary: #f3f4f6;
+    --ock-text-success: #9ca3af;
+    --ock-text-warning: #d1d5db;
+    --ock-text-disabled: #4b5563;
+
+    --ock-bg-default: #111827 !important;
+    --ock-bg-default-hover: #1f2937;
+    --ock-bg-default-active: #374151;
+    --ock-bg-alternate: #1f2937;
+    --ock-bg-alternate-hover: #374151;
+    --ock-bg-alternate-active: #4b5563;
+    --ock-bg-inverse: #0f172a;
+    --ock-bg-inverse-hover: #1e293b;
+    --ock-bg-inverse-active: #334155;
+    --ock-bg-primary: green;
+    --ock-bg-primary-hover: #6b7280;
+    --ock-bg-primary-active: #9ca3af;
+    --ock-bg-primary-washed: #1f2937;
+    --ock-bg-primary-disabled: #374151;
+    --ock-bg-secondary: #1f2937;
+    --ock-bg-secondary-hover: #374151;
+    --ock-bg-secondary-active: #4b5563;
+    --ock-bg-error: #991b1b;
+    --ock-bg-warning: #92400e;
+    --ock-bg-success: #065f46;
+    --ock-bg-default-reverse: #f9fafb;
+
+    --ock-icon-color-primary: #9ca3af;
+    --ock-icon-color-foreground: #f9fafb;
+    --ock-icon-color-foreground-muted: #9ca3af;
+    --ock-icon-color-inverse: #1f2937;
+    --ock-icon-color-error: #f87171;
+    --ock-icon-color-success: #34d399;
+    --ock-icon-color-warning: #fbbf24;
+
+    --ock-line-primary: #6b7280;
+    --ock-line-default: #374151;
+    --ock-line-heavy: #4b5563;
+    --ock-line-inverse: #e5e7eb;
+  }

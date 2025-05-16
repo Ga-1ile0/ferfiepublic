@@ -1,0 +1,318 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum Role {
+    PARENT
+    KID
+}
+
+enum AllowanceFrequency {
+    DAILY
+    WEEKLY
+    MONTHLY
+}
+
+enum ChoreStatus {
+    ACTIVE
+    PENDING_APPROVAL
+    COMPLETED
+    REJECTED
+    EXPIRED
+}
+
+enum TransactionType {
+    ALLOWANCE
+    CHORE_REWARD
+    GIFT_CARD_PURCHASE
+    TOKEN_TRADE
+    NFT_TRADE
+}
+
+enum TokenType {
+    USDC
+    EURC
+    CADC
+    BRZ
+    IDRX
+    ETH
+    USD
+}
+
+model OrderV2 {
+    id                 String        @id @default(uuid())
+    createdDate        DateTime
+    closingDate        DateTime?
+    listingTime        Int
+    expirationTime     Int
+    orderHash          String        @unique
+    maker              Json          @db.JsonB // store your OpenSeaAccount
+    taker              Json?         @db.JsonB
+    protocolData       Json          @db.JsonB
+    protocolAddress    String
+    currentPrice       BigInt        @db.BigInt // 64-bit integer
+    makerFees          Json
+    takerFees          Json
+    side               OrderSide
+    orderType          OrderType
+    cancelled          Boolean
+    finalized          Boolean
+    markedInvalid      Boolean
+    clientSignature    String?
+    remainingQuantity  Int
+    nftContractAddress String? // Added to track the NFT contract address
+    nftTokenId         String? // Added to track the NFT token ID
+    createdAt          DateTime      @default(now())
+    updatedAt          DateTime      @updatedAt
+    Transaction        Transaction[]
+}
+
+enum OrderSide {
+    ask
+    bid
+    listing
+    offer
+}
+
+enum OrderType {
+    basic
+    english
+    criteria
+}
+
+model User {
+    id                   String             @id @default(uuid())
+    name                 String?
+    email                String?            @unique
+    emailVerified        DateTime?
+    address              String             @unique
+    privateKey           String?
+    privateKeyDownloaded Boolean            @default(false)
+    familyAddress        String?
+    recoveryPhrase       String?
+    dek                  String?
+    image                String?
+    role                 Role?
+    createdAt            DateTime           @default(now())
+    updatedAt            DateTime           @updatedAt
+    // Relationships
+    family               Family?            @relation("FamilyMembers", fields: [familyId], references: [id])
+    familyId             String?
+    parentOf             Family[]           @relation("FamilyOwner")
+    allowances           Allowance[]
+    choresAssigned       Chore[]            @relation("ChoreAssignedTo")
+    choresCreated        Chore[]            @relation("ChoreCreatedBy")
+    transactions         Transaction[]
+    giftCardPurchases    GiftCardPurchase[]
+    tokenTrades          TokenTrade[]
+    permissions          Permission?
+    SidebarOption        SidebarOption[]
+    authCode             ChildAuthCode?
+}
+
+model Family {
+    id              String    @id @default(uuid())
+    name            String
+    currency        TokenType @default(USDC)
+    currencyAddress String? // For stablecoin addresses like USDC
+    createdAt       DateTime  @default(now())
+    updatedAt       DateTime  @updatedAt
+
+    // Relationships
+    owner        User          @relation("FamilyOwner", fields: [parentId], references: [id])
+    parentId     String
+    members      User[]        @relation("FamilyMembers")
+    allowance    Float         @default(0)
+    transactions Transaction[] @relation("FamilyTransactions")
+}
+
+model Allowance {
+    id         String             @id @default(uuid())
+    amount     Float
+    frequency  AllowanceFrequency
+    dayOfWeek  Int? // 0-6 for weekly (0 = Sunday)
+    dayOfMonth Int? // 1-31 for monthly
+    nextDate   DateTime
+    createdAt  DateTime           @default(now())
+    updatedAt  DateTime           @updatedAt
+
+    // Relationships
+    user   User   @relation(fields: [userId], references: [id])
+    userId String
+}
+
+model Chore {
+    id                String      @id @default(uuid())
+    title             String
+    description       String?
+    reward            Float
+    dueDate           DateTime?
+    status            ChoreStatus @default(ACTIVE)
+    evidence          String? // URL to evidence (e.g., photo)
+    feedback          String?
+    createdAt         DateTime    @default(now())
+    updatedAt         DateTime    @updatedAt
+    completedAt       DateTime?
+    assignmentType    String? // 'individual', 'all', or 'first-to-complete'
+    familyId          String? // For 'all' and 'first-to-complete' assignments
+    isFirstToComplete Boolean     @default(false) // Flag for first-to-complete chores
+
+    // Relationships
+    assignedTo   User   @relation("ChoreAssignedTo", fields: [assignedToId], references: [id])
+    assignedToId String
+    createdBy    User   @relation("ChoreCreatedBy", fields: [createdById], references: [id])
+    createdById  String
+}
+
+model Transaction {
+    id          String          @id @default(uuid())
+    amount      Float
+    type        TransactionType
+    hash        String? // Transaction hash for blockchain transactions
+    description String?
+    createdAt   DateTime        @default(now())
+    status      String?
+
+    // Relationships
+    user      User     @relation(fields: [userId], references: [id])
+    userId    String
+    family    Family?  @relation("FamilyTransactions", fields: [familyId], references: [id])
+    familyId  String?
+    order     OrderV2? @relation(fields: [orderHash], references: [orderHash])
+    orderHash String?
+}
+
+model GiftCard {
+    id          String   @id @default(uuid())
+    name        String
+    description String?
+    category    String
+    imageUrl    String?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    // Relationships
+    availableAmounts GiftCardAmount[]
+    purchases        GiftCardPurchase[]
+}
+
+model GiftCardAmount {
+    id        String   @id @default(uuid())
+    amount    Float
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    // Relationships
+    giftCard   GiftCard @relation(fields: [giftCardId], references: [id])
+    giftCardId String
+}
+
+model GiftCardPurchase {
+    id        String   @id @default(uuid())
+    amount    Float
+    code      String
+    createdAt DateTime @default(now())
+
+    // Relationships
+    user       User     @relation(fields: [userId], references: [id])
+    userId     String
+    giftCard   GiftCard @relation(fields: [giftCardId], references: [id])
+    giftCardId String
+}
+
+model TokenTrade {
+    id           String    @id @default(uuid())
+    fromAmount   Float
+    fromToken    String
+    toAmount     Float
+    toToken      String
+    exchangeRate Float?
+    usdBuyPrice  Float?
+    usdSellPrice Float?
+    txHash       String?
+    createdAt    DateTime  @default(now())
+    completedAt  DateTime?
+
+    // Relationships
+    user   User   @relation(fields: [userId], references: [id])
+    userId String
+}
+
+model Permission {
+    id                      String  @id @default(uuid())
+    tradingEnabled          Boolean @default(true)
+    nftEnabled              Boolean @default(true)
+    giftCardsEnabled        Boolean @default(true)
+    maxTradeAmount          Float? // Daily limit, null = unlimited
+    maxGiftCardAmount       Float? // Weekly limit, null = unlimited
+    requireGiftCardApproval Boolean @default(true)
+
+    // Crypto transfer permissions
+    cryptoTransferEnabled     Boolean  @default(false)
+    maxTransferAmount         Float? // Per transfer limit, null = unlimited
+    allowedRecipientAddresses String[] @default([])
+
+    // Recipient address nicknames stored as JSON {address: nickname}
+    recipientNicknames  Json?   @db.JsonB
+    includeFamilyWallet Boolean @default(true) // Allow sending to family wallet
+
+    // Allowed tokens (Using String array for simplicity, could use relation to Tokens model)
+    allowedTokenSymbols       String[] @default([])
+    allowedNftSlugs           String[] @default([])
+    // Allowed gift card categories (Using String array)
+    allowedGiftCardCategories String[] @default([])
+
+    // Relationships
+    user   User   @relation(fields: [userId], references: [id])
+    userId String @unique
+}
+
+model SidebarOption {
+    id        String   @id @default(uuid())
+    name      String   @default("Menu")
+    link      String   @default("#")
+    userId    String
+    User      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([userId])
+}
+
+model ChildAuthCode {
+    id        String   @id @default(uuid())
+    code      String   @unique
+    expiresAt DateTime
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    // Relationships
+    child   User   @relation(fields: [childId], references: [id], onDelete: Cascade)
+    childId String @unique
+}
+
+model Tokens {
+    id       String @id @default(uuid())
+    contract String
+    name     String
+    symbol   String
+    decimals Int
+    image    String
+}
+
+model TokenRate {
+    id        String   @id @default(uuid())
+    contract  String
+    usdPrice  Float
+    timestamp DateTime @default(now())
+
+    @@index([contract, timestamp])
+}
