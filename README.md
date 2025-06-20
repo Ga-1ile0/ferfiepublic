@@ -1,4 +1,4 @@
-# FerFieFam Dashboard
+# Ferfie
 
 A family finance management dashboard built with Next.js, TypeScript, Wagmi, Prisma, and Recharts. Parents and children can manage chores, allowances, and view token price charts in real-time.
 
