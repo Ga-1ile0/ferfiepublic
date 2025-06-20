@@ -63,7 +63,7 @@ export function NFTOfferDrawer({ open, onOpenChange, token }: NFTOfferDrawerProp
         const response = await getKidPermissions(user.id);
         if (response.status === 200 && response.data) {
           setNftEnabled(response.data.nftEnabled ?? true);
-          setMaxTradeAmount(response.data.maxTradeAmount ?? null);
+          setMaxTradeAmount(response.data.maxNftTradeAmount ?? null);
         } else {
           setNftEnabled(true);
           setMaxTradeAmount(null);

@@ -1,9 +1,16 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { parseEther, ethers } from 'ethers';
+import { ethers } from 'ethers';
 import { TransactionType } from '@prisma/client';
 import { decryptSensitiveData } from '@/lib/kms-service';
+import { availableTokens } from '@/lib/tokens';
+
+interface Token {
+  contract: string;
+  decimals: number;
+  [key: string]: any; // For other properties we don't care about
+}
 
 /**
  * Get allowance transactions for a specific child
@@ -128,8 +135,18 @@ export const claimAllowance = async (childId: string) => {
       const tokenAbi = ['function transfer(address recipient, uint256 amount) public returns (bool)'];
       const tokenContract = new ethers.Contract(family.currencyAddress, tokenAbi, wallet);
 
-      // Convert amount to wei (assuming 18 decimals for the token)
-      const amountInWei = parseEther(allowance.amount.toString());
+      if (!family.currencyAddress) {
+        throw new Error('Family has no currency address configured');
+      }
+
+      // Get token decimals from availableTokens or default to 18
+      const tokenInfo = availableTokens.find(
+        (token: Token) => token.contract.toLowerCase() === family.currencyAddress!.toLowerCase()
+      );
+      const tokenDecimals = tokenInfo?.decimals ?? 18;
+
+      // Convert amount to the correct decimal places
+      const amountInWei = ethers.parseUnits(allowance.amount.toString(), tokenDecimals);
 
       // Execute the transfer
       const tx = await tokenContract.transfer(child.address, amountInWei);

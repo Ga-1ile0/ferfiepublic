@@ -1,6 +1,16 @@
 import axios from 'axios';
 
-export const availableNfts = [
+export type HardcodedNft = {
+  id: number;
+  contract: string;
+  name: string;
+  slug: string;
+  image: string;
+  banner: string;
+};
+
+
+export const availableNfts: HardcodedNft[] = [
   {
     id: 1,
     contract: '0x3319197b0d0f8ccd1087f2d2e47a8fb7c0710171',

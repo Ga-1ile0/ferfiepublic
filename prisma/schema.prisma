@@ -35,6 +35,9 @@ enum TransactionType {
     GIFT_CARD_PURCHASE
     TOKEN_TRADE
     NFT_TRADE
+    TOKEN_TRANSFER
+    DEPOSIT
+    WITHDRAWAL
 }
 
 enum TokenType {
@@ -127,11 +130,12 @@ model Family {
     updatedAt       DateTime  @updatedAt
 
     // Relationships
-    owner        User          @relation("FamilyOwner", fields: [parentId], references: [id])
-    parentId     String
-    members      User[]        @relation("FamilyMembers")
-    allowance    Float         @default(0)
-    transactions Transaction[] @relation("FamilyTransactions")
+    owner          User            @relation("FamilyOwner", fields: [parentId], references: [id])
+    parentId       String
+    members        User[]          @relation("FamilyMembers")
+    allowance      Float           @default(0)
+    transactions   Transaction[]   @relation("FamilyTransactions")
+    nftCollections NftCollection[]
 }
 
 model Allowance {
@@ -250,8 +254,9 @@ model Permission {
     id                      String  @id @default(uuid())
     tradingEnabled          Boolean @default(true)
     nftEnabled              Boolean @default(true)
-    giftCardsEnabled        Boolean @default(true)
+    giftCardsEnabled        Boolean @default(false)
     maxTradeAmount          Float? // Daily limit, null = unlimited
+    maxNftTradeAmount       Float? // Daily NFT trade limit, null = unlimited
     maxGiftCardAmount       Float? // Weekly limit, null = unlimited
     requireGiftCardApproval Boolean @default(true)
 
@@ -269,6 +274,8 @@ model Permission {
     allowedNftSlugs           String[] @default([])
     // Allowed gift card categories (Using String array)
     allowedGiftCardCategories String[] @default([])
+    giftCardCountry           String   @default("US")
+    giftCardEmail             String?
 
     // Relationships
     user   User   @relation(fields: [userId], references: [id])
@@ -290,6 +297,7 @@ model SidebarOption {
 model ChildAuthCode {
     id        String   @id @default(uuid())
     code      String   @unique
+    isUsed    Boolean  @default(false)
     expiresAt DateTime
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
@@ -315,4 +323,24 @@ model TokenRate {
     timestamp DateTime @default(now())
 
     @@index([contract, timestamp])
+}
+
+model NftCollection {
+    id              String   @id @default(uuid())
+    name            String
+    contractAddress String
+    imageUrl        String?
+    bannerUrl       String?
+    description     String?
+    slug            String?
+    creator         String?
+    tokenCount      String?
+    isSpam          Boolean  @default(false)
+    isNsfw          Boolean  @default(false)
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
+    family          Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+    familyId        String
+
+    @@unique([familyId, contractAddress])
 }

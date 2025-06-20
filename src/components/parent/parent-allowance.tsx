@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Loader2 } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { useAuth } from '@/contexts/authContext';
 import { SetAllowanceDialog } from '@/components/dialogs/set-allowance-dialog';
 import { getChildrenAllowances } from '@/server/allowance';
 import { getChildAllowanceTransactions } from '@/server/allowanceTransactions';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
+import { Skeleton } from '@/components/ui/skeleton';
+
 export function ParentAllowance() {
   const [showSetAllowance, setShowSetAllowance] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -116,8 +118,23 @@ export function ParentAllowance() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="flex justify-center items-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <div className="space-y-4">
+                  {[1, 2, 3].map(index => (
+                    <div
+                      key={index}
+                      className="flex justify-between items-center border-b pb-4 last:border-0 last:pb-0"
+                    >
+                      <div className="space-y-2">
+                        <Skeleton className="h-5 w-32" />
+                        <Skeleton className="h-3 w-24" />
+                        <Skeleton className="h-3 w-28" />
+                      </div>
+                      <div className="text-right space-y-2">
+                        <Skeleton className="h-5 w-16 ml-auto" />
+                        <Skeleton className="h-8 w-24 ml-auto" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : childrenWithAllowances.length > 0 ? (
                 <div className="space-y-4">
@@ -200,8 +217,23 @@ export function ParentAllowance() {
             </CardHeader>
             <CardContent>
               {isLoadingHistory ? (
-                <div className="flex justify-center items-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <div className="space-y-4">
+                  {[1, 2, 3].map(index => (
+                    <div
+                      key={index}
+                      className="flex justify-between items-center border-b pb-4 last:border-0 last:pb-0"
+                    >
+                      <div className="space-y-2">
+                        <Skeleton className="h-5 w-32" />
+                        <Skeleton className="h-3 w-24" />
+                        <Skeleton className="h-3 w-36" />
+                      </div>
+                      <div className="text-right space-y-2">
+                        <Skeleton className="h-5 w-20 ml-auto" />
+                        <Skeleton className="h-3 w-16 ml-auto" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : transactionHistory.length > 0 ? (
                 <div className="space-y-4">

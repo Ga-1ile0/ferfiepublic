@@ -110,7 +110,7 @@ export const createChildWithWallet = async (
         permissions: {
           create: {
             tradingEnabled: true,
-            giftCardsEnabled: true,
+            giftCardsEnabled: false,
           },
         },
         SidebarOption: {

@@ -89,7 +89,7 @@ export const availableTokens = [
   // STABLECOINS
   {
     id: 3408,
-    contract: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+    contract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     name: 'USDC',
     symbol: 'USDC',
     decimals: 6,

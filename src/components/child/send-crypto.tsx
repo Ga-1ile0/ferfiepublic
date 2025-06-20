@@ -381,7 +381,7 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                             onClick={handleCopyAddress}
                             disabled={!walletAddress}
                           >
-                            <Copy className="h-4 w-4" />
+                            <Copy className="h-3 w-3" />
                           </Button>
                         </div>
                       </div>
@@ -509,7 +509,7 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                             id="amount"
                             type="number"
                             placeholder="0.00"
-                            value={amount}
+                            value={amount.toFixed(6)}
                             onChange={e => setAmount(parseFloat(e.target.value) || 0)}
                           />
                           <div className="flex justify-between text-xs text-muted-foreground">
@@ -518,7 +518,7 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                               variant="ghost"
                               size="sm"
                               className="h-5 p-0 underline"
-                              onClick={() => setAmount(selectedToken.balance)}
+                              onClick={() => setAmount(Number(selectedToken.balance.toFixed(6)))}
                             >
                               Max
                             </Button>

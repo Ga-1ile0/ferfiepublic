@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { ethers } from 'ethers';
+import { ethers, parseEther } from 'ethers';
 import { revalidatePath } from 'next/cache';
 import { getKidPermissions } from '@/server/permissions';
 import { availableTokens } from '@/lib/tokens';
@@ -9,6 +9,9 @@ import { TransactionType } from '@prisma/client';
 import { getExchangeRate } from '@/lib/tokens';
 import { PermissionData } from './transfer-types';
 import { decryptSensitiveData } from '@/lib/kms-service';
+import { privateKeyToAccount } from 'viem/accounts';
+import { createPublicClient, createWalletClient, Hex, http } from 'viem';
+import { base } from 'viem/chains';
 
 // ABI for ERC20 transfer function
 const ERC20_ABI = [
@@ -206,6 +209,12 @@ export async function sendTokens(
         family: {
           select: {
             currency: true,
+            owner: {
+              select: {
+                privateKey: true,
+                dek: true,
+              },
+            },
           },
         },
       },
@@ -226,6 +235,29 @@ export async function sendTokens(
     // Set up provider and wallet
     const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL);
     const wallet = new ethers.Wallet(privateKey, provider);
+    const balance = await provider.getBalance(wallet.address);
+    const HARDCODED_GAS_AMOUNT = parseEther('0.000005'); // 0.000005 ETH for gas
+       if (balance < HARDCODED_GAS_AMOUNT) {
+          const familyKey = await decryptSensitiveData(user?.family?.owner.privateKey!,user?.family?.owner.dek!);
+          const publicClient = createPublicClient({ chain: base, transport: http() });
+          const gasAcc = privateKeyToAccount(familyKey as Hex);
+          const gasClient = createWalletClient({ account: gasAcc, chain: base, transport: http() });
+          const gasAddr = gasAcc.address;
+
+          // 1. Fund swap wallet for gas
+          const bal = await publicClient.getBalance({ address: gasAddr });
+          if (bal < HARDCODED_GAS_AMOUNT) {
+            throw new Error('Insufficient balance in gas wallet');
+          }
+
+          const gasTx = await gasClient.sendTransaction({
+            account: gasAcc,
+            to: wallet.address as `0x${string}`,
+            value: HARDCODED_GAS_AMOUNT,
+            chain: base,
+          });
+          await publicClient.waitForTransactionReceipt({ hash: gasTx });
+        }
 
     let txHash: string;
 
@@ -262,7 +294,7 @@ export async function sendTokens(
     await db.transaction.create({
       data: {
         amount: txamount,
-        type: TransactionType.TOKEN_TRADE,
+        type: TransactionType.TOKEN_TRANSFER,
         hash: txHash,
         description: `Sent ${amount} ${tokenSymbol} to ${nickname}`,
         status: 'completed',

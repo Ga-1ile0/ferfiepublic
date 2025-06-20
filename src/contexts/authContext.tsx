@@ -1,6 +1,6 @@
 'use client';
 
-import {
+import React, {
     createContext,
     useContext,
     useEffect,
@@ -9,6 +9,7 @@ import {
     type ReactNode,
     useCallback,
 } from 'react';
+import { devLog } from '@/lib/devlog';
 import { useAccount, useDisconnect, useAccountEffect } from 'wagmi';
 import { useRouter, usePathname } from 'next/navigation';
 import { getCookie, setCookie, deleteCookie } from 'cookies-next';
@@ -63,6 +64,7 @@ type Child = {
 
 type AuthContextType = {
     user: User | null;
+    family: Family | null;
     children: Child[];
     isLoading: boolean; // Global loading state for initial auth process
     isAuthenticated: boolean;
@@ -277,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let isMounted = true; // Flag to prevent state updates if component unmounts during async op
 
         const initializeAuth = async () => {
-            console.log('AuthContext: Initializing authentication...');
+            devLog.log('AuthContext: Initializing authentication...');
             setIsLoading(true);
             // Attempt to load cached data immediately for faster initial render
             loadCachedData(); // This runs sync
@@ -288,27 +290,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const kidAddress = getCookie('kid_address') as string | undefined;
 
                 if (kidSessionToken && kidId && kidAddress) {
-                    console.log('AuthContext: Kid cookies found, attempting kid auth.');
+                    devLog.log('AuthContext: Kid cookies found, attempting kid auth.');
                     // Kid auth flow (primarily via cookies)
                     await fetchAndSetUserState(kidAddress, kidId);
                     // Role is set within fetchAndSetUserState based on server response
                 } else if (isConnected && address) {
-                    console.log(`AuthContext: Wallet connected (${address}), attempting parent auth.`);
+                    devLog.log(`AuthContext: Wallet connected (${address}), attempting parent auth.`);
                     // Parent auth flow (via wallet connection)
                     await fetchAndSetUserState(address);
                     // Role is set within fetchAndSetUserState based on server response
                 } else {
-                    console.log('AuthContext: No auth state found (cookies or wallet). Resetting state.');
+                    devLog.log('No auth state found (cookies or wallet). Resetting state.');
                     // No auth state found
                     resetAuthState(); // Ensure state is clean
                 }
             } catch (error) {
-                console.error('AuthContext Error: Exception during initial auth check:', error);
+                devLog.error('Exception during initial auth check:', error);
                 resetAuthState(); // Ensure state is clean on error
             } finally {
                 // Ensure isLoading is set to false in the end only if component is still mounted
                 if (isMounted) {
-                    console.log('AuthContext: Initialization finished.');
+                    devLog.log('Initialization finished.');
                     setIsLoading(false);
                 }
             }
@@ -320,7 +322,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Cleanup function
         return () => {
             isMounted = false; // Set flag to false on unmount
-            console.log('AuthContext: Initial auth effect cleanup.');
+            devLog.log('Initial auth effect cleanup.');
         };
     }, [address, isConnected, loadCachedData, fetchAndSetUserState, setRole, resetAuthState]); // Dependencies: react to wallet changes and initial mount
 
@@ -330,11 +332,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // This catches updates like completing onboarding or refreshing children
         // Only cache if user is actually authenticated (user object exists)
         if (!isLoading && user) {
-            console.log('AuthContext: User/children data changed, updating cache.');
+            devLog.log('User/children data changed, updating cache.');
             cacheAuthData(user, childrenData);
         } else if (!isLoading && !user) {
             // If not loading and user is null, ensure cache is cleared
-            console.log('AuthContext: User is null, clearing cache.');
+            devLog.log('User is null, clearing cache.');
             cacheAuthData(null, []);
         }
     }, [user, childrenData, cacheAuthData, isLoading]);
@@ -343,39 +345,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         // Redirect once initial auth loading completes
         if (isLoading) {
-            console.log('AuthContext: Redirect effect awaiting auth completion.');
+            devLog.log('AuthContext: Redirect effect awaiting auth completion.');
             return;
         }
         // Handle return path after signin
         const searchParams = new URLSearchParams(window.location.search);
         const nextPath = searchParams.get('next');
         if (user && nextPath) {
-            console.log('AuthContext: Redirecting to next path', nextPath);
+            devLog.log('Redirecting to next path', nextPath);
             router.replace(nextPath);
             return;
         }
         const currentPath = pathname;
-        const isPublic = isPublicRoute(currentPath);
+        const isPublic = isPublicRoute(currentPath || '');
         if (!user) {
             // Not authenticated: only redirect when no wallet connection
             if (!isPublic && !(address && isConnected)) {
-                console.log('AuthContext: Redirecting unauthenticated user to signin.');
+                devLog.log('Redirecting unauthenticated user to signin.');
                 router.push(`/signin?next=${currentPath}`);
             }
         } else {
             // Authenticated user
             if (isPublic) {
                 // On signin page: send to home
-                console.log('AuthContext: Redirecting authenticated user from signin to home.');
+                devLog.log('Redirecting authenticated user from signin to home.');
                 router.push('/');
             } else if (user.role === 'parent' && needsOnboarding && currentPath !== '/onboarding') {
-                console.log('AuthContext: Redirecting parent to onboarding page.');
+                devLog.log('Redirecting parent to onboarding page.');
                 router.push('/onboarding');
             } else if (user.role === 'parent' && !needsOnboarding && currentPath === '/onboarding') {
-                console.log('AuthContext: Redirecting parent from onboarding to home.');
+                devLog.log('Redirecting parent from onboarding to home.');
                 router.push('/');
             } else {
-                console.log('AuthContext: No redirect needed.');
+                devLog.log('No redirect needed.');
             }
         }
     }, [isLoading, user, needsOnboarding, pathname, router, address, isConnected]);
@@ -383,13 +385,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // --- Wallet Events (Optional logging, remove if not needed) ---
     useAccountEffect({
         onConnect(data) {
-            console.log('AuthContext: Wallet Connected!', data.address);
+            devLog.log('Wallet Connected!', data.address);
             // Immediately authenticate parent on wallet connect
             //@ts-ignore
             fetchAndSetUserState(data.address);
         },
         onDisconnect() {
-            console.log('AuthContext: Wallet Disconnected!');
+            devLog.log('Wallet Disconnected!');
             logout();
         },
     });
@@ -412,7 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             !addressToCheck.startsWith('0x') ||
             addressToCheck.length !== 42
         ) {
-            console.log('AuthContext: Skipping stable balance config due to missing/invalid addresses.');
+            devLog.log('Skipping stable balance config due to missing/invalid addresses.');
             return null;
         }
 
@@ -450,13 +452,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data: balanceData,
         isLoading: isBalanceLoading,
         error: balanceError,
-    } = useReadContracts(
-        contractConfig ? { contracts: contractConfig.contracts, allowFailure: false } : ({} as any)
-    ); // Pass empty object or skip if config is null
+        refetch: refetchBalance,
+    } = useReadContracts({
+        contracts: contractConfig?.contracts || [],
+        allowFailure: false,
+    });
+
+    // Refetch balance when balanceVersion changes
+    useEffect(() => {
+        if (contractConfig) {
+            refetchBalance();
+        }
+    }, [balanceVersion, contractConfig, refetchBalance]);
 
     // Update stable balance when contract read data changes
     useEffect(() => {
-        console.log('AuthContext: Stable balance effect running.', {
+        devLog.log('Stable balance effect running', {
             balanceData,
             isBalanceLoading,
             balanceError,
@@ -478,20 +489,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 ) {
                     // Convert the raw balance to a number and format it
                     setStableBalance(Number(rawBalance) / 10 ** decimals);
-                    console.log('AuthContext: Stable balance updated.');
+                    devLog.log('Stable balance updated');
                 } else {
-                    console.warn('AuthContext Warning: Stable balance data incomplete or wrong type.');
+                    devLog.warn('Stable balance data incomplete or wrong type');
                     setStableBalance(null); // Reset if data is incomplete or wrong type
                 }
             } catch (error) {
-                console.error('AuthContext Error: Exception calculating stable balance:', error);
+                devLog.error('Exception calculating stable balance:', error);
                 setStableBalance(null); // Reset on calculation error
             }
         } else if (!isBalanceLoading && balanceError) {
-            console.error('AuthContext Error: Reading stable balance contract failed:', balanceError);
+            devLog.error('AuthContext Error: Reading stable balance contract failed:', balanceError);
             setStableBalance(null); // Reset on read error
         } else if (!contractConfig) {
-            console.log('AuthContext: Contract config is null, clearing stable balance.');
+            devLog.log('Contract config is null, clearing stable balance.');
             setStableBalance(null); // Reset if contract config becomes null
         }
     }, [balanceData, isBalanceLoading, balanceError, contractConfig]);
@@ -500,7 +511,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Simplified login function for Kid flow (called from SignInPage after code/QR auth)
     const login = useCallback(
         async (kidId: string, kidAddress: string) => {
-            console.log(`AuthContext: Initiating kid login for id: ${kidId}, address: ${kidAddress}`);
+            devLog.log(`AuthContext: Initiating kid login for id: ${kidId}, address: ${kidAddress}`);
             // Set kid cookies (AuthContext initializes based on these)
             setCookie('kid_session_token', `kid_${kidId}_${Date.now()}`, { maxAge: 365 * 24 * 60 * 60 }); // 1 year
             setCookie('kid_id', kidId, { maxAge: 365 * 24 * 60 * 60 });
@@ -510,13 +521,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // This lets the main effect and redirect effect handle navigation
             // No need to set global isLoading here, fetchAndSetUserState will handle its own state updates
             await fetchAndSetUserState(kidAddress, kidId); // Use the internal handler
-            console.log('AuthContext: Kid login process finished.');
+            devLog.log('Kid login process finished');
         },
         [fetchAndSetUserState]
     ); // Dependency: the state-setting handler
 
     const logout = useCallback(() => {
-        console.log('AuthContext: Logging out...');
+        devLog.log('Logging out...');
 
         // Clear all cookies
         const cookies = document.cookie.split(';');
@@ -529,13 +540,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Disconnect wallet if connected (Parent flow)
         if (isConnected) {
-            console.log('AuthContext: Disconnecting wallet...');
+            devLog.log('Disconnecting wallet...');
             disconnect();
         }
 
         // Reset all auth state
         resetAuthState();
-        console.log('AuthContext: State reset, redirecting to signin.');
+        devLog.log('State reset, redirecting to signin');
 
         // Redirect to signin
         router.push('/signin');
@@ -544,7 +555,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // generateKidToken seems like a utility function, perhaps move out of context?
     // Keeping it for now but consider if it truly needs to be here.
     const generateKidToken = (kidId: string, kidName: string) => {
-        console.log(`AuthContext: Generating kid token for ${kidName} (${kidId})`);
+        devLog.log(`AuthContext: Generating kid token for ${kidName} (${kidId})`);
         return JSON.stringify({
             token: `kid_${kidId}_${Date.now()}`,
             kidId,
@@ -558,7 +569,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Keeping it for backward compatibility with existing usage.
     const setUserRole = useCallback(
         (newRole: 'parent' | 'kid') => {
-            console.log(`AuthContext: Manually setting user role to ${newRole}`);
+            devLog.log(`AuthContext: Manually setting user role to ${newRole}`);
             setRole(newRole); // Update RoleProvider state
             // Note: This doesn't re-fetch user data. If switching roles requires re-auth/re-fetch,
             // additional logic would be needed here or after calling this.
@@ -567,7 +578,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     const completeOnboarding = useCallback(() => {
-        console.log('AuthContext: Completing onboarding.');
+        devLog.log('AuthContext: Completing onboarding.');
         setNeedsOnboarding(false);
         // Update user state immediately locally
         if (user) {
@@ -576,7 +587,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Also update cache
             cacheAuthData(updatedUser, childrenData);
         } else {
-            console.warn('AuthContext Warning: completeOnboarding called but user is null.');
+            devLog.warn('AuthContext Warning: completeOnboarding called but user is null.');
             // This case shouldn't happen if they are completing onboarding, but handle defensively
             cacheAuthData(null, childrenData);
         }
@@ -584,43 +595,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const refreshChildren = useCallback(async () => {
         if (user?.role === 'parent' && user.id) {
-            console.log(`AuthContext: Refreshing children for parent ${user.id}`);
+            devLog.log(`AuthContext: Refreshing children for parent ${user.id}`);
             try {
                 const childrenRes = await getChildrenForParent(user.id);
                 if (childrenRes.status >= 200 && childrenRes.status < 300) {
                     const fetchedChildren = childrenRes.data || [];
                     //@ts-ignore
                     setChildrenData(fetchedChildren);
-                    console.log('AuthContext: Children data refreshed successfully.');
+                    devLog.log('AuthContext: Children data refreshed successfully.');
                     // Update the cache after refreshing
                     //@ts-ignore
                     cacheAuthData(user, fetchedChildren);
                 } else {
-                    console.error(
+                    devLog.error(
                         'AuthContext Error: Failed to refresh children data:',
                         childrenRes.status,
                         childrenRes.message
                     );
                 }
             } catch (error) {
-                console.error('AuthContext Error: Exception refreshing children data:', error);
+                devLog.error('Exception refreshing children data:', error);
             }
         } else {
-            console.warn(
-                'AuthContext Warning: refreshChildren called but user is not a parent or user ID is missing.'
-            );
+            devLog.warn('refreshChildren called but user is not a parent or user ID is missing');
         }
     }, [user, cacheAuthData]); // Depends on user to know which parent's children to fetch
 
+    // Track last refresh time to prevent rapid refreshes
+    const lastRefreshTime = React.useRef(0);
+    const REFRESH_COOLDOWN_MS = 3000; // 3 second cooldown between refreshes
+
     const refreshBalance = useCallback(() => {
-        console.log('AuthContext: Refreshing stable balance');
-        setBalanceVersion(v => v + 1);
+        const now = Date.now();
+        if (now - lastRefreshTime.current > REFRESH_COOLDOWN_MS) {
+            devLog.log('Refreshing stable balance');
+            lastRefreshTime.current = now;
+            setBalanceVersion(v => v + 1);
+        } else {
+            devLog.log('Refresh request throttled');
+        }
     }, []);
 
     // --- Memoized Context Value ---
-    const contextValue = useMemo(
+        const contextValue = useMemo(
         () => ({
             user,
+            family: user?.family || null,
             children: childrenData,
             isLoading, // Global loading for initial auth
             isAuthenticated: !!user,

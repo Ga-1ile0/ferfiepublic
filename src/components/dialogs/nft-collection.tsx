@@ -53,6 +53,7 @@ import {
   Tag,
   RefreshCcw,
   SendHorizontal,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -535,13 +536,29 @@ export function NFTDetailDialog({ nft, open, onOpenChange }: NFTDetailDialogProp
               </div>
 
               {/* Banner */}
-              <div className="w-full h-48 relative">
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/80 z-[1]"></div>
-                <img
-                  src={nft.banner || nft.image || '/placeholder.svg?height=400&width=800'}
-                  alt={`${nft.name} banner`}
-                  className="w-full h-full object-cover"
-                />
+              <div className="w-full h-48 md:h-56 lg:h-64 relative bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800">
+                {nft.banner || nft.image ? (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/80 z-[1]"></div>
+                    <img
+                      src={nft.banner || nft.image}
+                      alt={`${nft.name} banner`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback to collection image if banner fails to load
+                        if (nft.banner && nft.image) {
+                          const target = e.target as HTMLImageElement;
+                          target.onerror = null; // Prevent infinite loop
+                          target.src = nft.image;
+                        }
+                      }}
+                    />
+                  </>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <ImageIcon className="h-16 w-16 text-gray-400 dark:text-gray-600" />
+                  </div>
+                )}
               </div>
 
               {/* NFT Info */}

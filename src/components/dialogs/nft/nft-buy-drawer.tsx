@@ -24,6 +24,7 @@ import {
   getEthStableRate,
 } from '@/lib/tokens';
 import type { Token, TokenData } from '@/types/nft';
+import { devLog } from '@/lib/devlog';
 
 interface NFTBuyDrawerProps {
   open: boolean;
@@ -78,7 +79,7 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
         const response = await getKidPermissions(user.id);
         if (response.status === 200 && response.data) {
           setNftEnabled(response.data.nftEnabled ?? true);
-          setMaxTradeAmount(response.data.maxTradeAmount ?? null);
+          setMaxTradeAmount(response.data.maxNftTradeAmount ?? null);
         } else {
           setNftEnabled(true);
           setMaxTradeAmount(null);
@@ -207,7 +208,7 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
       const ethPrice = token?.market?.topBid?.price?.amount?.native;
       const totalPrice = price * 1.02;
 
-      console.log('Stable Rate:', stableRate);
+      devLog.log('Stable Rate:', stableRate);
       // Call the server-side function to execute the purchase
       const result = await buyNFT(
         user.id,
@@ -237,8 +238,8 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
   const calculateTotalPrice = () => {
     if (user?.family?.currencyAddress === '0xE9185Ee218cae427aF7B9764A011bb89FeA761B4') {
       const basePrice = token?.market.floorAsk?.price?.amount?.decimal! * stableRate || 0;
-      console.log('Base Price:', basePrice);
-      console.log('Stable Rate:', stableRate);
+      devLog.log('Base Price:', basePrice);
+      devLog.log('Stable Rate:', stableRate);
       return basePrice * 1.02; // 2% platform fee
     }
     const basePrice = token?.market.floorAsk?.price?.amount?.decimal || 0;

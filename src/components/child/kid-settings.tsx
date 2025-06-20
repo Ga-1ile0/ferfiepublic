@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -11,6 +12,19 @@ import { Switch } from '@/components/ui/switch';
 
 export function KidSettings() {
   const { user, logout } = useAuth();
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopyAddress = async () => {
+    if (!user?.walletAddress) return;
+    
+    try {
+      await navigator.clipboard.writeText(user.walletAddress);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 1000);
+    } catch (error) {
+      console.error('Failed to copy address:', error);
+    }
+  };
 
   return (
     <div className="space-y-6 pb-20">
@@ -44,7 +58,13 @@ export function KidSettings() {
                 <Label htmlFor="wallet-address">My Wallet Address</Label>
                 <div className="flex gap-2">
                   <Input id="wallet-address" defaultValue={user?.walletAddress} readOnly />
-                  <Button variant="outline">Copy</Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleCopyAddress}
+                    disabled={isCopied}
+                  >
+                    {isCopied ? 'Copied!' : 'Copy'}
+                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   This is your wallet address on the Base blockchain

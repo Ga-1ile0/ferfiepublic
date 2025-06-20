@@ -15,6 +15,19 @@ import { toast } from 'react-toastify';
 export function ParentSettings() {
   const { user, logout } = useAuth();
   const [name, setName] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopyAddress = async () => {
+    if (!user?.familyAddress) return;
+    
+    try {
+      await navigator.clipboard.writeText(user.familyAddress);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 1000);
+    } catch (error) {
+      console.error('Failed to copy address:', error);
+    }
+  };
 
   const handleNameSave = async () => {
     if (!user?.id || name) return;
@@ -62,7 +75,13 @@ export function ParentSettings() {
                 <Label htmlFor="wallet">Family Address</Label>
                 <div className="flex gap-2">
                   <Input id="wallet" defaultValue={user?.familyAddress} readOnly />
-                  <Button variant="outline">Copy</Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleCopyAddress}
+                    disabled={isCopied}
+                  >
+                    {isCopied ? 'Copied!' : 'Copy'}
+                  </Button>
                 </div>
               </div>
 

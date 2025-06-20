@@ -10,6 +10,8 @@ import { getClient, Execute, createClient, reservoirChains } from '@reservoir0x/
 import { OpenSeaSDK, Chain } from 'opensea-js';
 import { ethers } from 'ethers';
 import { decryptSensitiveData } from '@/lib/kms-service';
+import { NftCollection } from '@prisma/client';
+import { availableNfts, HardcodedNft } from '@/lib/nfts';
 // Configure Reservoir Client
 // Using any type assertion to bypass TypeScript errors with the SDK configuration
 
@@ -20,7 +22,8 @@ createClient({
       active: true,
     },
   ],
-  source: 'http://localhost:3000/',
+  source: 'https://app.ferfie.com/',
+  apiKey: process.env.RESERVOIR_API_KEY,
 });
 
 /**
@@ -507,6 +510,7 @@ export async function makeOffer(
     };
   }
 }
+//Not implamented yet
 
 // export async function listNFTForSale(
 //   userId: string,
@@ -901,12 +905,143 @@ export async function getEthToStableRate(stablecoinAddress: string): Promise<num
     return 1 / rate;
   } catch (error) {
     console.error('Error getting ETH to stablecoin rate:', error);
-
     // Default to a hard-coded fallback rate if we can't get the real one
     // This would be better stored in a database or config and updated regularly
     return 0; // Example: 1 ETH = $1800 USD
   }
 }
+
+interface ReservoirCollection {
+  id: string;
+  name: string;
+  image: string | null;
+  description: string | null;
+  slug: string | null;
+  creator: string | null;
+  tokenCount: string;
+  isSpam: boolean;
+  isNsfw: boolean;
+  primaryContract: string;
+  banner?: string;
+  bannerImageUrl?: string;
+}
+
+interface ReservoirCollectionDetails {
+  collection: {
+    banner: string | null;
+    bannerImageUrl: string | null;
+    [key: string]: any;
+  };
+}
+
+export async function getReservoirCollection(contractAddress: string): Promise<ReservoirCollection> {
+  const url = `https://api-base.reservoir.tools/collections/v7?contract=${contractAddress}`;
+  const response = await fetch(url, {
+    headers: {
+      'x-api-key': process.env.NEXT_PUBLIC_RESERVOIR_API_KEY || '',
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch collection from Reservoir');
+  }
+  const data = await response.json();
+  return data.collections[0];
+}
+
+export async function getReservoirCollectionDetails(contractAddress: string): Promise<{ banner: string | null }> {
+  try {
+    const url = `https://api-base.reservoir.tools/collection/v3?id=${contractAddress}`;
+    const response = await fetch(url, {
+      headers: {
+        'x-api-key': process.env.NEXT_PUBLIC_RESERVOIR_API_KEY || '',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Failed to fetch collection details: ${response.status} ${response.statusText}`);
+      return { banner: null };
+    }
+
+    const data: ReservoirCollectionDetails = await response.json();
+
+    // Return the banner URL, falling back to bannerImageUrl if banner is not available
+    return {
+      banner: data.collection?.banner || data.collection?.bannerImageUrl || null
+    };
+  } catch (error) {
+    console.error('Error fetching collection details:', error);
+    return { banner: null };
+  }
+}
+
+export async function addCustomNftCollection(
+  familyId: string,
+  collection: ReservoirCollection
+): Promise<NftCollection> {
+  // Fetch additional collection details to get the banner image
+  const collectionDetails = await getReservoirCollectionDetails(collection.primaryContract);
+
+  const newCollection = await db.nftCollection.create({
+    data: {
+      name: collection.name,
+      contractAddress: collection.primaryContract,
+      imageUrl: collection.image,
+      bannerUrl: collectionDetails?.banner || null, // Use the banner URL from collection details
+      description: collection.description,
+      slug: collection.slug,
+      creator: collection.creator,
+      tokenCount: collection.tokenCount,
+      isSpam: collection.isSpam,
+      isNsfw: collection.isNsfw,
+      family: {
+        connect: {
+          id: familyId,
+        },
+      },
+    },
+  });
+
+  // Refresh collection data on Reservoir in the background
+  // We don't await this since it can take some time and we don't want to block the response
+  try {
+    const refreshUrl = 'https://api-base.reservoir.tools/collections/refresh/v2';
+    await fetch(refreshUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.NEXT_PUBLIC_RESERVOIR_API_KEY || '',
+      },
+      body: JSON.stringify({
+        collection: collection.primaryContract,
+        overrideCoolDown: false,
+        refreshTokens: true,
+      }),
+    });
+    console.log(`Refreshed collection data for ${collection.name} on Reservoir`);
+  } catch (error) {
+    console.error('Error refreshing collection on Reservoir:', error);
+    // Non-blocking error - we still want to return the collection
+  }
+
+  revalidatePath('/dashboard'); // Revalidate path to show new collection
+  return newCollection;
+}
+
+export async function getCustomNftCollections(familyId: string): Promise<NftCollection[]> {
+  const collections = await db.nftCollection.findMany({
+    where: {
+      familyId: familyId,
+    },
+  });
+  return collections;
+}
+
+export async function getNftCollections(familyId: string) {
+  const hardcodedCollections: HardcodedNft[] = availableNfts;
+  const customCollections = await getCustomNftCollections(familyId);
+  return { hardcoded: hardcodedCollections, custom: customCollections };
+}
+
 export async function getStableToEthRate(stablecoinAddress: string): Promise<number> {
   try {
     // Base ETH address
@@ -923,21 +1058,14 @@ export async function getStableToEthRate(stablecoinAddress: string): Promise<num
     }
 
     const data = await response.json();
-
-    // Extract the rate (inverse it since we want ETH to stablecoin, not stablecoin to ETH)
     const rate = data[stablecoinAddress.toLowerCase()]?.eth;
-
     if (!rate) {
       throw new Error('Could not find exchange rate in response');
     }
 
-    // Return the inverse (ETH to stablecoin)
     return rate;
   } catch (error) {
     console.error('Error getting ETH to stablecoin rate:', error);
-
-    // Default to a hard-coded fallback rate if we can't get the real one
-    // This would be better stored in a database or config and updated regularly
-    return 0; // Example: 1 ETH = $1800 USD
+    return 0;
   }
 }

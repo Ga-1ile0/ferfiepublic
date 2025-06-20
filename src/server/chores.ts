@@ -3,10 +3,16 @@
 import { db } from '@/lib/db';
 import { ChoreStatus, TransactionType } from '@prisma/client';
 import { Chore } from '../types';
-import { parseEther, ethers } from 'ethers';
+import { ethers } from 'ethers';
 import { decryptSensitiveData } from '@/lib/kms-service';
+import { availableTokens } from '@/lib/tokens';
 
-// Types for chore operations
+interface Token {
+  contract: string;
+  decimals: number;
+  [key: string]: any; // For other properties we don't care about
+}
+
 export type ChoreAssignmentType = 'individual' | 'all' | 'first-to-complete';
 
 interface CreateChoreParams {
@@ -515,8 +521,18 @@ export async function transferReward(childId: string, amount: number, descriptio
       const tokenAbi = ['function transfer(address recipient, uint256 amount) public returns (bool)'];
       const tokenContract = new ethers.Contract(family.currencyAddress, tokenAbi, wallet);
 
-      // Convert amount to wei (assuming 18 decimals for the token)
-      const amountInWei = parseEther(amount.toString());
+      if (!family.currencyAddress) {
+        throw new Error('Family has no currency address configured');
+      }
+
+      // Get token decimals from availableTokens or default to 18
+      const tokenInfo = availableTokens.find(
+        (token: Token) => token.contract.toLowerCase() === family.currencyAddress!.toLowerCase()
+      );
+      const tokenDecimals = tokenInfo?.decimals ?? 18;
+
+      // Convert amount to the correct decimal places
+      const amountInWei = ethers.parseUnits(amount.toString(), tokenDecimals);
 
       // Execute the transfer
       const tx = await tokenContract.transfer(child.address, amountInWei);

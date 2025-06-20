@@ -22,24 +22,27 @@ export const getKidPermissions = async (kidId: string) => {
           nftEnabled: true,
           giftCardsEnabled: true,
           maxTradeAmount: null,
+          maxNftTradeAmount: null,
           maxGiftCardAmount: null,
           requireGiftCardApproval: true,
           // Crypto transfer settings
           cryptoTransferEnabled: false,
           maxTransferAmount: null,
           allowedRecipientAddresses: [],
-          recipientNicknames: {}, // Empty object for address-to-nickname mappings
-          includeFamilyWallet: true, // Default to true - allow transfer to family wallet
-          // Legacy fields
+          recipientNicknames: {},
+          includeFamilyWallet: true,
           allowEth: true,
           allowUsdc: true,
           allowBase: true,
-          allowedTokenSymbols: [], // Default to empty array
-          allowGamingGiftCards: true, // Keep for backward
-          allowFoodGiftCards: true, // Keep for backward compatibility
-          allowEntertainmentGiftCards: true, // Keep for backward compatibility
-          allowShoppingGiftCards: false, // Keep for backward compatibility
-          allowedGiftCardCategories: [], // Default to empty array
+          allowedTokenSymbols: [],
+          allowGamingGiftCards: true,
+          allowEntertainmentGiftCards: true,
+          allowShoppingGiftCards: false,
+          allowedGiftCardCategories: [],
+          allowedNftSlugs: [],
+          // Gift card settings
+          giftCardCountry: 'US',
+          giftCardEmail: ''
         },
       };
     }
@@ -64,22 +67,26 @@ export const updateKidPermissions = async (
     nftEnabled?: boolean;
     giftCardsEnabled?: boolean;
     maxTradeAmount?: number | null;
+    maxNftTradeAmount?: number | null;
     maxGiftCardAmount?: number | null;
     requireGiftCardApproval?: boolean;
     // Crypto transfer permissions
     cryptoTransferEnabled?: boolean;
     maxTransferAmount?: number | null;
     allowedRecipientAddresses?: string[];
-    // Legacy fields
     allowEth?: boolean;
-    allowUsdc?: boolean; // Keep for backward compatibility
-    allowBase?: boolean; // Keep for backward compatibility
-    allowedTokenSymbols?: string[]; // New field
-    allowGamingGiftCards?: boolean; // Keep for backward compatibility
-    allowFoodGiftCards?: boolean; // Keep for backward compatibility
-    allowEntertainmentGiftCards?: boolean; // Keep for backward compatibility
-    allowShoppingGiftCards?: boolean; // Keep for backward compatibility
-    allowedGiftCardCategories?: string[]; // New field
+    allowUsdc?: boolean;
+    allowBase?: boolean;
+    allowedTokenSymbols?: string[];
+    allowGamingGiftCards?: boolean;
+    allowFoodGiftCards?: boolean;
+    allowEntertainmentGiftCards?: boolean;
+    allowShoppingGiftCards?: boolean;
+    allowedGiftCardCategories?: string[];
+    allowedNftSlugs?: string[];
+    // Gift card settings
+    giftCardCountry?: string;
+    giftCardEmail?: string;
   }
 ) => {
   try {
@@ -106,6 +113,7 @@ export const updateKidPermissions = async (
         ...permissions,
         allowedTokenSymbols: permissions.allowedTokenSymbols ?? [],
         allowedGiftCardCategories: permissions.allowedGiftCardCategories ?? [],
+        allowedNftSlugs: permissions.allowedNftSlugs ?? [],
       };
       updatedPermissions = await db.permission.create({
         data: createData,
@@ -138,88 +146,8 @@ export const canMakeNFTTransaction = async (kidId: string, amount: number) => {
   if (!data.nftEnabled) {
     return false;
   }
-  if (data.maxTradeAmount !== null && amount > data.maxTradeAmount) {
+  if (data.maxNftTradeAmount !== null && amount > data.maxNftTradeAmount) {
     return false;
   }
   return true;
 };
-
-/**
- * Update sidebar options based on permission changes
- */
-// async function updateSidebarBasedOnPermissions(
-//   kidId: string,
-//   permissions: {
-//     tradingEnabled?: boolean;
-//     giftCardsEnabled?: boolean;
-//   }
-// ) {
-//   try {
-//     // Get current sidebar options
-//     const sidebarOptions = await db.sidebarOption.findMany({
-//       where: { userId: kidId },
-//     });
-
-//     // Determine which options should be available based on permissions
-//     const allowTrade = permissions.tradingEnabled !== false; // Default to true if not specified
-//     const allowGiftCards = permissions.giftCardsEnabled !== false; // Default to true if not specified
-
-//     // Always allow these options
-//     const allowChores = true;
-//     const allowSettings = true;
-
-//     // Update sidebar options
-//     await db.sidebarOption.deleteMany({
-//       where: { userId: kidId },
-//     });
-
-//     // Create default options that are always available
-//     const defaultOptions = [
-//       {
-//         name: 'Home',
-//         link: '/',
-//         userId: kidId,
-//       },
-//       {
-//         name: 'Allowance',
-//         link: '/allowance',
-//         userId: kidId,
-//       },
-//     ];
-
-//     // Add conditional options based on permissions
-//     const conditionalOptions = [
-//       allowTrade && {
-//         name: 'Trade',
-//         link: '/trade',
-//         userId: kidId,
-//       },
-//       allowGiftCards && {
-//         name: 'Gift Cards',
-//         link: '/gift-cards',
-//         userId: kidId,
-//       },
-//       allowChores && {
-//         name: 'Chores',
-//         link: '/chores',
-//         userId: kidId,
-//       },
-//       allowSettings && {
-//         name: 'Settings',
-//         link: '/settings',
-//         userId: kidId,
-//       },
-//     ].filter(Boolean);
-
-//     // Combine and create all options
-//     const allOptions = [...defaultOptions, ...conditionalOptions];
-//     await db.sidebarOption.createMany({
-//       data: allOptions,
-//     });
-
-//     return true;
-//   } catch (error) {
-//     console.error('Error updating sidebar based on permissions:', error);
-//     return false;
-//   }
-// }

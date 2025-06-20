@@ -1,14 +1,13 @@
-// lib/kmsService.ts
 import { KeyManagementServiceClient } from "@google-cloud/kms";
 import crypto from "crypto";
 
-// --- Configuration ---
+
 const GCLOUD_PROJECT_ID = process.env.GCLOUD_PROJECT_ID;
 const KMS_LOCATION = process.env.KMS_LOCATION;
 const KMS_KEYRING_NAME = process.env.KMS_KEYRING_NAME;
 const KMS_KEK_NAME = process.env.KMS_KEK_NAME;
 
-// Basic validation on startup
+
 if (
   !GCLOUD_PROJECT_ID ||
   !KMS_LOCATION ||
@@ -22,7 +21,6 @@ if (
 
 const KEK_RESOURCE_NAME = `projects/${GCLOUD_PROJECT_ID}/locations/${KMS_LOCATION}/keyRings/${KMS_KEYRING_NAME}/cryptoKeys/${KMS_KEK_NAME}`;
 
-// Initialize the KMS client (singleton pattern)
 let kmsClient: KeyManagementServiceClient;
 
 function getKmsClient(): KeyManagementServiceClient {
@@ -31,11 +29,9 @@ function getKmsClient(): KeyManagementServiceClient {
     const credentialsFilePath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
     if (credentialsJsonString && credentialsJsonString.trim().startsWith("{")) {
-      // Priority 1: Use JSON string from GCP_SERVICE_ACCOUNT_KEY_JSON (for Vercel, etc.)
       try {
         const credentials = JSON.parse(credentialsJsonString);
         kmsClient = new KeyManagementServiceClient({ credentials });
-        // console.log("KMS Client Initialized with explicit credentials from GCP_SERVICE_ACCOUNT_KEY_JSON.");
       } catch (e) {
         console.error(
           "Failed to parse GCP_SERVICE_ACCOUNT_KEY_JSON. Content (first 100 chars):",
@@ -43,39 +39,28 @@ function getKmsClient(): KeyManagementServiceClient {
           "Error:",
           e
         );
-        // Fallback or throw error depending on how critical this is
-        // For now, let it fall through to try other methods, but log a severe warning.
+
         console.warn(
           "Falling back on KMS client initialization due to GCP_SERVICE_ACCOUNT_KEY_JSON parse error."
         );
       }
     }
 
-    // If kmsClient is still not initialized, try GOOGLE_APPLICATION_CREDENTIALS path
     if (!kmsClient && credentialsFilePath) {
-      // Priority 2: Use file path from GOOGLE_APPLICATION_CREDENTIALS (for local dev)
-      // The KeyManagementServiceClient constructor will use this env var by default if no explicit credentials are provided.
       kmsClient = new KeyManagementServiceClient();
-      // console.log("KMS Client Initialized using GOOGLE_APPLICATION_CREDENTIALS path.");
     }
 
-    // If kmsClient is still not initialized, use Application Default Credentials
     if (!kmsClient) {
-      // Priority 3: Use Application Default Credentials (e.g., when running on GCP infrastructure)
       kmsClient = new KeyManagementServiceClient();
-      // console.log("KMS Client Initialized using Application Default Credentials (ADC).");
     }
   }
   return kmsClient;
 }
 
-// --- Symmetric Encryption Constants ---
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const DEK_LENGTH_BYTES = 32;
-
-// --- Symmetric Encryption Helper Functions ---
 
 function generateDek(): Buffer {
   return crypto.randomBytes(DEK_LENGTH_BYTES);
@@ -133,8 +118,6 @@ function decryptWithDek(ciphertextPackage: Buffer, dek: Buffer): Buffer {
   }
 }
 
-// --- KMS Interaction Functions ---
-
 async function encryptDekWithKms(dek: Buffer): Promise<Buffer> {
   const client = getKmsClient();
   try {
@@ -182,8 +165,6 @@ async function decryptDekWithKms(encryptedDek: Buffer): Promise<Buffer> {
     }
   }
 }
-
-// --- Public Workflow Functions ---
 
 export interface EncryptedPackage {
   encryptedDataB64: string;

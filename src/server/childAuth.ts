@@ -44,11 +44,13 @@ export const createChildAuthCode = async (childId: string) => {
       where: { childId },
       update: {
         code: authCode,
+        isUsed: false, // Reset isUsed when generating a new code
         expiresAt: new Date(Date.now() + 1000 * 60 * 15), // 15 minutes
       },
       create: {
         childId,
         code: authCode,
+        isUsed: false, // New codes start as unused
         expiresAt: new Date(Date.now() + 1000 * 60 * 15), // 15 minutes
       },
     });
@@ -103,6 +105,17 @@ export const validateChildAuthCode = async (code: string) => {
     if (!authRecord) {
       return { status: 404, message: 'Invalid or expired auth code' };
     }
+
+    // Check if code has already been used
+    if (authRecord.isUsed) {
+      return { status: 400, message: 'This code has already been used' };
+    }
+
+    // Mark the code as used
+    await db.childAuthCode.update({
+      where: { id: authRecord.id },
+      data: { isUsed: true },
+    });
 
     // Return the child user data
     return {
