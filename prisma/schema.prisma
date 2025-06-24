@@ -119,6 +119,7 @@ model User {
     permissions          Permission?
     SidebarOption        SidebarOption[]
     authCode             ChildAuthCode?
+    sessions             UserSession[]
 }
 
 model Family {
@@ -305,6 +306,24 @@ model ChildAuthCode {
     // Relationships
     child   User   @relation(fields: [childId], references: [id], onDelete: Cascade)
     childId String @unique
+}
+
+model UserSession {
+    id           String   @id @default(uuid())
+    sessionToken String   @unique
+    deviceInfo   String?  // Browser/device information
+    ipAddress    String?
+    lastActive   DateTime @default(now())
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+    isActive     Boolean  @default(true)
+
+    // Relationships
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId String
+
+    @@index([userId, isActive])
+    @@index([sessionToken])
 }
 
 model Tokens {

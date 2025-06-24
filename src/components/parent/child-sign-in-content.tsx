@@ -3,12 +3,23 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { createChildAuthCode } from '@/server/childAuth';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { getChildActiveSessions, logoutSession } from '@/server/userSessions';
+import { Loader2, RefreshCw, Smartphone, Monitor, LogOut, Clock } from 'lucide-react';
+import { useAuth } from '@/contexts/authContext';
 import Image from 'next/image';
 
 interface ChildSignInContentProps {
   childId: string;
   childName: string;
+}
+
+interface ActiveSession {
+  id: string;
+  deviceInfo: string;
+  ipAddress: string | null;
+  lastActive: string;
+  createdAt: string;
+  isCurrent: boolean;
 }
 
 export function ChildSignInContent({ childId, childName }: ChildSignInContentProps) {
@@ -19,6 +30,11 @@ export function ChildSignInContent({ childId, childName }: ChildSignInContentPro
     qrCode: string;
     expiresAt: string;
   } | null>(null);
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [loggingOutSession, setLoggingOutSession] = useState<string | null>(null);
+
+  const { user } = useAuth();
 
   const generateCode = async () => {
     setIsLoading(true);
@@ -39,10 +55,75 @@ export function ChildSignInContent({ childId, childName }: ChildSignInContentPro
     }
   };
 
-  // Generate code on component mount
+  const fetchActiveSessions = async () => {
+    setIsLoadingSessions(true);
+    try {
+      const result = await getChildActiveSessions(childId);
+      if (result.status === 200 && result.data) {
+        //@ts-ignore
+        setActiveSessions(result.data);
+      } else {
+        console.error('Failed to fetch sessions:', result.message);
+      }
+    } catch (err) {
+      console.error('Error fetching sessions:', err);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
+  const handleLogoutSession = async (sessionId: string) => {
+    if (!user?.id) return;
+
+    setLoggingOutSession(sessionId);
+    try {
+      const result = await logoutSession(sessionId, user.id);
+      if (result.status === 200) {
+        // Refresh sessions list
+        await fetchActiveSessions();
+      } else {
+        console.error('Failed to logout session:', result.message);
+      }
+    } catch (err) {
+      console.error('Error logging out session:', err);
+    } finally {
+      setLoggingOutSession(null);
+    }
+  };
+
+  // Generate code and fetch sessions on component mount
   useEffect(() => {
     generateCode();
+    fetchActiveSessions();
   }, [childId]);
+
+  // Helper function to get device icon
+  const getDeviceIcon = (deviceInfo: string) => {
+    if (
+      deviceInfo.toLowerCase().includes('iphone') ||
+      deviceInfo.toLowerCase().includes('android') ||
+      deviceInfo.toLowerCase().includes('mobile')
+    ) {
+      return <Smartphone className="h-4 w-4" />;
+    }
+    return <Monitor className="h-4 w-4" />;
+  };
+
+  // Helper function to format last active time
+  const formatLastActive = (lastActive: string) => {
+    const date = new Date(lastActive);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
 
   // Format the expiration time
   const formatExpirationTime = (expiresAt: string) => {
@@ -56,7 +137,7 @@ export function ChildSignInContent({ childId, childName }: ChildSignInContentPro
   };
 
   return (
-    <div className="space-y-6 py-4">
+    <div className="space-y-6 py-4 max-h-[80vh] overflow-y-auto">
       {isLoading ? (
         <div className="flex justify-center items-center py-8">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -103,6 +184,76 @@ export function ChildSignInContent({ childId, childName }: ChildSignInContentPro
             <Button onClick={generateCode} variant="outline" size="sm">
               <RefreshCw className="mr-2 h-3 w-3" /> Generate New Code
             </Button>
+          </div>
+
+          {/* Active Sessions Section */}
+          <div className="border-t pt-6 mt-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Active Devices</h3>
+              <Button
+                onClick={fetchActiveSessions}
+                variant="ghost"
+                size="sm"
+                disabled={isLoadingSessions}
+              >
+                {isLoadingSessions ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+
+            {isLoadingSessions ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : activeSessions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Monitor className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>No active devices</p>
+                <p className="text-sm">Your child hasn't signed in yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {activeSessions.map(session => (
+                  <div
+                    key={session.id}
+                    className="flex items-center justify-between p-3 border rounded-lg bg-muted/30"
+                  >
+                    <div className="flex items-center space-x-3">
+                      {getDeviceIcon(session.deviceInfo)}
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{session.deviceInfo}</p>
+                        <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          <span>{formatLastActive(session.lastActive)}</span>
+                          {session.ipAddress && (
+                            <>
+                              <span>•</span>
+                              <span>{session.ipAddress}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => handleLogoutSession(session.id)}
+                      variant="ghost"
+                      size="sm"
+                      disabled={loggingOutSession === session.id}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      {loggingOutSession === session.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <LogOut className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       ) : null}

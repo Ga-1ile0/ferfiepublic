@@ -16,7 +16,7 @@ export function KidSettings() {
 
   const handleCopyAddress = async () => {
     if (!user?.walletAddress) return;
-    
+
     try {
       await navigator.clipboard.writeText(user.walletAddress);
       setIsCopied(true);
@@ -58,11 +58,7 @@ export function KidSettings() {
                 <Label htmlFor="wallet-address">My Wallet Address</Label>
                 <div className="flex gap-2">
                   <Input id="wallet-address" defaultValue={user?.walletAddress} readOnly />
-                  <Button 
-                    variant="outline" 
-                    onClick={handleCopyAddress}
-                    disabled={isCopied}
-                  >
+                  <Button variant="outline" onClick={handleCopyAddress} disabled={isCopied}>
                     {isCopied ? 'Copied!' : 'Copy'}
                   </Button>
                 </div>
