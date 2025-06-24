@@ -10,7 +10,6 @@ import { devLog } from '@/lib/devlog';
 
 // Placeholder for BandoRouterProxy address - should be in .env
 const BANDO_ROUTER_PROXY_ADDRESS = (process.env.BANDO_ROUTER_PROXY_ADDRESS || '0x2D9A53f52dD0Cdc922140bE6893381330a9e39FC') as Hex;
-const NATIVE_ETH_SENTINEL = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'; // Common sentinel for native ETH
 const HARDCODED_GAS_AMOUNT = parseEther('0.0000025'); // For funding user wallet if needed
 
 const ERC20_APPROVE_ABI = [
@@ -198,7 +197,7 @@ export async function purchaseGiftCardServerAction(
       data: {
         amount: parseFloat(formatUnits(tokenAmountInSmallestUnit, paymentToken.decimals)), // Store amount in token's main unit
         type: TransactionType.GIFT_CARD_PURCHASE,
-        description: `Purchase ${brandName} Gift Card (${variantSku}) for ${parseFloat(fiatAmountForContract)/100} ${params.fiatCurrency || 'USD'}`, // fiatAmountForContract is in cents
+        description: `Purchase ${brandName} Gift Card for ${parseFloat(fiatAmountForContract)/100} ${params.fiatCurrency || 'USD'}`, // fiatAmountForContract is in cents
         status: 'pending',
         userId: user.id,
         familyId: user.familyId || undefined,
@@ -209,7 +208,7 @@ export async function purchaseGiftCardServerAction(
     if (serviceRef) {
       devLog.log('[purchaseGiftCardServerAction] Using validationId provided from client:', serviceRef);
     } else {
-      // If validationId is not provided, call the /references/ API to get one
+      // If validationId is not provided, call the /references/ API from server to get one
       // This is a fallback in case client-side validation fails or is not implemented
       try {
         devLog.log('[purchaseGiftCardServerAction] No validationId provided, calling /references/ API as fallback');
@@ -275,34 +274,6 @@ export async function purchaseGiftCardServerAction(
       }
     }
 
-    // 4. Handle Native Token (ETH) or ERC20 Token Purchase
-    if (paymentToken.contract.toLowerCase() === NATIVE_ETH_SENTINEL.toLowerCase() || paymentToken.contract === zeroAddress) {
-      // Native ETH purchase
-      if (totalAmountFromQuoteInWeiForNative === undefined) {
-        await db.transaction.update({ where: { id: dbTxRecord.id }, data: { status: 'error', description: 'Missing totalAmount for native token purchase.' } });
-        return { success: false, error: 'Internal error: Missing totalAmount for native token purchase.' };
-      }
-
-      // Convert fiatAmount (e.g., "1.05") to cents for the contract
-      const fiatAmountInCents = BigInt(Math.round(parseFloat(fiatAmountForContract) * 100));
-
-      const payload = {
-        payer: userAccount.address,
-        fiatAmount: fiatAmountInCents,
-        serviceRef: (serviceRef || '').toString(), // Ensure serviceRef is not undefined before calling toString()
-        weiAmount: tokenAmountInSmallestUnit, // This should be digitalAssetAmountFromQuote in wei
-      };
-      devLog.log('[purchaseGiftCardServerAction] Calling requestService with payload:', payload, 'and value:', totalAmountFromQuoteInWeiForNative);
-
-      purchaseTxHash = await userWalletClient.writeContract({
-        address: BANDO_ROUTER_PROXY_ADDRESS,
-        abi: BANDO_ROUTER_ABI,
-        functionName: 'requestService',
-        args: [BigInt(evmServiceId), payload],
-        value: totalAmountFromQuoteInWeiForNative,
-      });
-
-    } else {
       // ERC20 Token purchase
       // 4a. Approve BandoRouterProxy to spend tokens
       const currentAllowance = await publicClient.readContract({
@@ -313,7 +284,7 @@ export async function purchaseGiftCardServerAction(
       });
 
       devLog.log(`[purchaseGiftCardServerAction] Current allowance: ${currentAllowance}, Required amount: ${tokenAmountInSmallestUnit}`);
-      
+
       // Always approve the exact amount needed to ensure sufficient allowance
       // This is safer than checking if currentAllowance < tokenAmountInSmallestUnit
       // because some tokens may have approval issues or require resetting allowance
@@ -322,20 +293,20 @@ export async function purchaseGiftCardServerAction(
       const bufferMultiplier = 105n; // 105% of the required amount
       const bufferDivisor = 100n;
       const approvalAmount = (tokenAmountInSmallestUnit * bufferMultiplier) / bufferDivisor;
-      
-      devLog.log(`[purchaseGiftCardServerAction] Approving with buffer: Required ${tokenAmountInSmallestUnit}, Approving ${approvalAmount}`); 
-      
+
+      devLog.log(`[purchaseGiftCardServerAction] Approving with buffer: Required ${tokenAmountInSmallestUnit}, Approving ${approvalAmount}`);
+
       const approveTxHash = await userWalletClient.writeContract({
         address: paymentToken.contract as Hex,
         abi: ERC20_APPROVE_ABI,
         functionName: 'approve',
         args: [BANDO_ROUTER_PROXY_ADDRESS, approvalAmount],
       });
-      
+
       // Wait for the approval transaction to be confirmed
       const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
       devLog.log(`[purchaseGiftCardServerAction] Approval transaction ${approveTxHash} confirmed with status: ${approvalReceipt.status}`);
-      
+
       // Verify the allowance after approval to ensure it was successful
       const newAllowance = await publicClient.readContract({
         address: paymentToken.contract as Hex,
@@ -343,13 +314,13 @@ export async function purchaseGiftCardServerAction(
         functionName: 'allowance',
         args: [userAccount.address, BANDO_ROUTER_PROXY_ADDRESS],
       });
-      
+
       devLog.log(`[purchaseGiftCardServerAction] New allowance after approval: ${newAllowance}`);
-      
+
       if (newAllowance < tokenAmountInSmallestUnit) {
         throw new Error(`Failed to approve token spending. Required: ${tokenAmountInSmallestUnit}, Approved: ${newAllowance}`);
       }
-      
+
       devLog.log(`[purchaseGiftCardServerAction] Approval successful. Required: ${tokenAmountInSmallestUnit}, Available allowance: ${newAllowance}`);
       // Convert fiatAmount (e.g., "1.05") to cents for the contract
       const fiatAmountInCents = BigInt(Math.round(parseFloat(fiatAmountForContract) * 100));
@@ -369,7 +340,7 @@ export async function purchaseGiftCardServerAction(
         functionName: 'requestERC20Service',
         args: [BigInt(evmServiceId), payload],
       });
-    }
+
 
     devLog.log(`[purchaseGiftCardServerAction] Purchase transaction sent: ${purchaseTxHash}`);
     await publicClient.waitForTransactionReceipt({ hash: purchaseTxHash });

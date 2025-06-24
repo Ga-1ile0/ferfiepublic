@@ -19,7 +19,7 @@ export function ParentSettings() {
 
   const handleCopyAddress = async () => {
     if (!user?.familyAddress) return;
-    
+
     try {
       await navigator.clipboard.writeText(user.familyAddress);
       setIsCopied(true);
@@ -30,15 +30,16 @@ export function ParentSettings() {
   };
 
   const handleNameSave = async () => {
-    if (!user?.id || name) return;
+    if (!user?.id || !name) return;
 
     try {
       const updateName = await updateUserName(user?.id || '', name);
       if (updateName.status === 200) {
-        toast('Name Updated Successfully');
+        toast.success('Profile Updated Successfully');
       }
     } catch (error) {
-      console.log(error);
+      toast.error('Failed to update profile');
+      console.error('Error updating profile:', error);
     }
   };
   return (
@@ -75,11 +76,7 @@ export function ParentSettings() {
                 <Label htmlFor="wallet">Family Address</Label>
                 <div className="flex gap-2">
                   <Input id="wallet" defaultValue={user?.familyAddress} readOnly />
-                  <Button 
-                    variant="outline" 
-                    onClick={handleCopyAddress}
-                    disabled={isCopied}
-                  >
+                  <Button variant="outline" onClick={handleCopyAddress} disabled={isCopied}>
                     {isCopied ? 'Copied!' : 'Copy'}
                   </Button>
                 </div>

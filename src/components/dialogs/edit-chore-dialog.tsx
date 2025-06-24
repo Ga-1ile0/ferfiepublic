@@ -20,11 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { DollarSign, Users, User, Trophy } from 'lucide-react';
+import { User } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/authContext';
-import { createChore, ChoreAssignmentType } from '@/server/chores';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { updateChore } from '@/server/chores';
 import { getChildrenForParent } from '@/server/user';
 import { Symbol } from '@/components/shared/currency-symbol';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -33,11 +32,13 @@ import { TimePicker } from '@/components/ui/time-picker';
 import { CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Chore } from '@/types';
 
-interface CreateChoreDialogProps {
+interface EditChoreDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onChoreCreated?: () => void;
+  chore: Chore | null;
+  onChoreUpdated?: () => void;
 }
 
 type ChildOption = {
@@ -45,16 +46,26 @@ type ChildOption = {
   name: string;
 };
 
-export function CreateChoreDialog({ open, onOpenChange, onChoreCreated }: CreateChoreDialogProps) {
+export function EditChoreDialog({ open, onOpenChange, chore, onChoreUpdated }: EditChoreDialogProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [reward, setReward] = useState('');
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [assignTo, setAssignTo] = useState('');
-  const [assignmentType, setAssignmentType] = useState<ChoreAssignmentType>('individual');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [children, setChildren] = useState<ChildOption[]>([]);
   const { user } = useAuth();
+
+  // Initialize form with chore data when opened
+  useEffect(() => {
+    if (open && chore) {
+      setTitle(chore.title);
+      setDescription(chore.description || '');
+      setReward(chore.reward.toString());
+      setDueDate(chore.dueDate ? new Date(chore.dueDate) : undefined);
+      setAssignTo(chore.assignedToId);
+    }
+  }, [open, chore]);
 
   // Fetch children in the family
   useEffect(() => {
@@ -87,6 +98,8 @@ export function CreateChoreDialog({ open, onOpenChange, onChoreCreated }: Create
   }, [open, user]);
 
   const handleSubmit = async () => {
+    if (!chore) return;
+    
     if (!title) {
       toast({
         title: 'Error',
@@ -105,15 +118,6 @@ export function CreateChoreDialog({ open, onOpenChange, onChoreCreated }: Create
       return;
     }
 
-    if (assignmentType === 'individual' && !assignTo) {
-      toast({
-        title: 'Error',
-        description: 'Please select a child to assign the chore to',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     if (!dueDate) {
       toast({
         title: 'Error',
@@ -123,48 +127,35 @@ export function CreateChoreDialog({ open, onOpenChange, onChoreCreated }: Create
       return;
     }
 
-    if (!user?.id || !user?.familyId) {
-      toast({
-        title: 'Error',
-        description: 'You must be logged in to create chores',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
-      const choreData = {
+      const updateData = {
+        id: chore.id,
         title,
         description,
         reward: Number(reward),
-        dueDate: dueDate,
-        createdById: user.id,
-        assignmentType,
-        assignedToId: assignmentType === 'individual' ? assignTo : undefined,
-        familyId: assignmentType !== 'individual' ? user.familyId : undefined,
+        dueDate,
       };
 
-      const result = await createChore(choreData);
+      const result = await updateChore(updateData);
 
-      if (result.status === 201) {
+      if (result.status === 200) {
         toast({
           title: 'Success',
-          description: `Chore "${title}" has been created`,
+          description: `Chore "${title}" has been updated`,
         });
-        resetForm();
         onOpenChange(false);
-        if (onChoreCreated) onChoreCreated();
+        if (onChoreUpdated) onChoreUpdated();
       } else {
         toast({
           title: 'Error',
-          description: result.message || 'Failed to create chore',
+          description: result.message || 'Failed to update chore',
           variant: 'destructive',
         });
       }
     } catch (error) {
-      console.error('Error creating chore:', error);
+      console.error('Error updating chore:', error);
       toast({
         title: 'Error',
         description: 'An unexpected error occurred',
@@ -175,27 +166,15 @@ export function CreateChoreDialog({ open, onOpenChange, onChoreCreated }: Create
     }
   };
 
-  const resetForm = () => {
-    setTitle('');
-    setDescription('');
-    setReward('');
-    setDueDate(undefined);
-    setAssignTo('');
-    setAssignmentType('individual');
-  };
-
   return (
     <Dialog
       open={open}
-      onOpenChange={open => {
-        if (!open) resetForm();
-        onOpenChange(open);
-      }}
+      onOpenChange={onOpenChange}
     >
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create a New Chore</DialogTitle>
-          <DialogDescription>Add a new chore with details and reward amount.</DialogDescription>
+          <DialogTitle>Edit Chore</DialogTitle>
+          <DialogDescription>Update chore details and reward amount.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
@@ -307,57 +286,17 @@ export function CreateChoreDialog({ open, onOpenChange, onChoreCreated }: Create
           </div>
 
           <div className="space-y-2">
-            <Label>Assignment Type</Label>
-            <RadioGroup
-              value={assignmentType}
-              onValueChange={value => setAssignmentType(value as ChoreAssignmentType)}
-              className="flex flex-col space-y-1"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="individual" id="individual" />
-                <Label htmlFor="individual" className="flex items-center cursor-pointer">
-                  <User className="h-4 w-4 mr-2" />
-                  Individual Child
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="all" id="all" />
-                <Label htmlFor="all" className="flex items-center cursor-pointer">
-                  <Users className="h-4 w-4 mr-2" />
-                  All Children
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="first-to-complete" id="first-to-complete" />
-                <Label htmlFor="first-to-complete" className="flex items-center cursor-pointer">
-                  <Trophy className="h-4 w-4 mr-2" />
-                  First to Complete
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          {assignmentType === 'individual' && (
-            <div className="space-y-2">
-              <Label htmlFor="assign-to">Assign To</Label>
-              <Select value={assignTo} onValueChange={setAssignTo}>
-                <SelectTrigger id="assign-to">
-                  <SelectValue placeholder="Select a child" />
-                </SelectTrigger>
-                <SelectContent>
-                  {children.map(child => (
-                    <SelectItem key={child.id} value={child.id}>
-                      {child.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Label htmlFor="assign-to">Assigned To</Label>
+            <div className="flex items-center space-x-2">
+              <User className="h-4 w-4" />
+              <span>{chore?.assignedTo?.name || 'Unassigned'}</span>
             </div>
-          )}
+            <p className="text-xs text-muted-foreground mt-1">Assignment cannot be changed after creation</p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? 'Creating...' : 'Create Chore'}
+            {isSubmitting ? 'Updating...' : 'Update Chore'}
           </Button>
         </DialogFooter>
       </DialogContent>

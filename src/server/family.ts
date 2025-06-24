@@ -46,7 +46,6 @@ export const getFamilyPrivateKey = async (userId: string) => {
     }
 
     const key = await decryptSensitiveData(user.privateKey!,user.dek!);
-    console.log('Family private key:', key);
     return {
       status: 200,
       data: { privateKey: key },

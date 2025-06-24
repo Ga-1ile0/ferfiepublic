@@ -164,8 +164,8 @@ export async function getChoresByChildId(childId: string): Promise<{ status: num
         };
       }
 
+      // Use the exact due date time for expiration check instead of setting to end of day
       const dueDateEnd = new Date(chore.dueDate ? chore.dueDate.getTime() : new Date().getTime());
-      dueDateEnd.setHours(23, 59, 59, 999);
       if (chore.status === 'ACTIVE' && chore.dueDate && dueDateEnd < new Date()) {
         // Update the chore status to EXPIRED in the database
         db.chore.update({

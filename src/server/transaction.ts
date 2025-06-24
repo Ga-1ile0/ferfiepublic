@@ -28,7 +28,7 @@ export const createTransaction = async (
         familyId,
       },
     });
-
+    console.log('Transaction created:', transaction);
     return {
       status: 200,
       data: transaction,

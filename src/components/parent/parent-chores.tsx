@@ -11,9 +11,10 @@ import {
     CardFooter,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, CheckCircle, XCircle, Edit } from 'lucide-react';
 import { CreateChoreDialog } from '@/components/dialogs/create-chore-dialog';
 import { ChoreDetailsDialog } from '@/components/dialogs/chore-details-dialog';
+import { EditChoreDialog } from '@/components/dialogs/edit-chore-dialog';
 import { toast } from 'react-toastify';
 import { useAuth } from '@/contexts/authContext';
 import {
@@ -31,6 +32,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export function ParentChores() {
     const [showAddChore, setShowAddChore] = useState(false);
     const [selectedChore, setSelectedChore] = useState<Chore | null>(null);
+    const [editChore, setEditChore] = useState<Chore | null>(null);
     const [activeChores, setActiveChores] = useState<Chore[]>([]);
     const [pendingChores, setPendingChores] = useState<Chore[]>([]);
     const [completedChores, setCompletedChores] = useState<Chore[]>([]);
@@ -143,12 +145,15 @@ export function ParentChores() {
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
+        // Format the time part
+        const timeStr = format(dueDate, 'h:mm a');
+
         if (dueDate.toDateString() === today.toDateString()) {
-            return 'Today';
+            return `Today ${timeStr}`;
         } else if (dueDate.toDateString() === tomorrow.toDateString()) {
-            return 'Tomorrow';
+            return `Tomorrow ${timeStr}`;
         } else {
-            return format(dueDate, 'MMM d, yyyy');
+            return format(dueDate, 'MMM d') + ` ${timeStr}`;
         }
     };
 
@@ -157,13 +162,13 @@ export function ParentChores() {
         return format(new Date(date), 'MMM d, yyyy');
     };
 
-    const LoadingChoreCard = () => (
-        <Card className="flex flex-col items-center justify-center py-12">
+    const LoadingSpinner = () => (
+        <div className="flex flex-col items-center justify-center py-12">
             <div className="flex flex-col items-center space-y-4">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
                 <p className="text-muted-foreground">Loading chores...</p>
             </div>
-        </Card>
+        </div>
     );
 
     return (
@@ -190,9 +195,7 @@ export function ParentChores() {
 
                 <TabsContent value="active" className="space-y-4 mt-6">
                     {isLoading ? (
-                        Array(3)
-                            .fill(0)
-                            .map((_, index) => <LoadingChoreCard key={`active-loading-${index}`} />)
+                        <LoadingSpinner />
                     ) : activeChores.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                             No active chores. Create a new chore to get started.
@@ -213,9 +216,14 @@ export function ParentChores() {
                                 <CardFooter className="border-t pt-4 flex justify-between">
                                     <Currency amount={chore.reward} className="font-bold text-lg" />
                                     <div className="space-x-2">
-                                        {/* <Button variant="outline" size="sm">
-                      Edit
-                    </Button> */}
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            onClick={() => setEditChore(chore)}
+                                        >
+                                            <Edit className="mr-2 h-4 w-4" />
+                                            Edit
+                                        </Button>
                                         <Button
                                             variant="destructive"
                                             size="sm"
@@ -232,9 +240,7 @@ export function ParentChores() {
 
                 <TabsContent value="pending" className="space-y-4 mt-6">
                     {isLoading ? (
-                        Array(2)
-                            .fill(0)
-                            .map((_, index) => <LoadingChoreCard key={`pending-loading-${index}`} />)
+                        <LoadingSpinner />
                     ) : pendingChores.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                             No chores pending approval.
@@ -295,9 +301,7 @@ export function ParentChores() {
 
                 <TabsContent value="completed" className="space-y-4 mt-6">
                     {isLoading ? (
-                        Array(3)
-                            .fill(0)
-                            .map((_, index) => <LoadingChoreCard key={`completed-loading-${index}`} />)
+                        <LoadingSpinner />
                     ) : completedChores.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">No completed chores yet.</div>
                     ) : (
@@ -342,6 +346,13 @@ export function ParentChores() {
                 onOpenChange={open => !open && setSelectedChore(null)}
                 //@ts-ignore
                 chore={selectedChore}
+            />
+
+            <EditChoreDialog
+                open={!!editChore}
+                onOpenChange={open => !open && setEditChore(null)}
+                chore={editChore}
+                onChoreUpdated={fetchChores}
             />
         </div>
     );

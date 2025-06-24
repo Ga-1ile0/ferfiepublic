@@ -322,7 +322,13 @@ export function GiftCardInterface() {
 
   return (
     <div className="space-y-6 pb-20">
-      <Card className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white">
+      <Card
+        className="text-white mb-6 sm:mb-0"
+        style={{
+          backgroundColor: '#a855f7',
+          backgroundImage: 'linear-gradient(to right, #8b5cf6, #4f46e5)',
+        }}
+      >
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Your Balance</CardTitle>
           <CardDescription className="text-purple-100">

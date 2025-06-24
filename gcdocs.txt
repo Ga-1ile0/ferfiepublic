@@ -1,0 +1,924 @@
+EVM Smart Contracts | Architecture
+Component Interactions
+Entry Points
+
+    BandoRouter: The main entry point for users to submit fulfillment requests
+
+    BandoFulfillmentManager: The entry point for fulfillers to register fulfillment results
+
+Data Flow
+
+    Request Submission:
+
+        User submits a request through the BandoRouter
+
+        Router forwards the request to the appropriate fulfillable contract
+
+    Fund Management:
+
+        BandoFulfillable holds native currency in escrow
+
+        BandoERC20Fulfillable holds ERC20 tokens in escrow
+
+        Both contracts track fulfillment records and manage fund pools
+
+    Fulfillment Registration:
+
+        Fulfiller submits fulfillment results to the BandoFulfillmentManager
+
+        Manager validates the fulfiller's authorization with the FulfillableRegistry
+
+        Manager registers the result with the appropriate fulfillable contract
+
+    Fund Release:
+
+        Upon successful fulfillment, funds are released to beneficiaries
+
+        Fees are accumulated for fulfillers
+
+        In V1.2, funds can be swapped to stablecoins before release
+
+Proxy Architecture
+
+Each core contract is deployed behind a proxy:
+
+    BandoRouterProxy: Proxy for the BandoRouter
+
+    BandoFulfillmentManagerProxy: Proxy for the BandoFulfillmentManager
+
+    BandoFulfillableProxy: Proxy for the BandoFulfillable
+
+    BandoERC20FulfillableProxy: Proxy for the BandoERC20Fulfillable
+
+    FulfillableRegistryProxy: Proxy for the FulfillableRegistry
+
+    ERC20TokenRegistryProxy: Proxy for the ERC20TokenRegistry
+    Core
+BandoERC20Fulfillable
+Overview
+
+The BandoERC20Fulfillable contract manages the escrow and distribution of ERC20 tokens for fulfillment services. It holds tokens in escrow until fulfillment results are registered, then manages the release of tokens to beneficiaries and fee accumulation.
+
+The BandoERC20Fulfillable is responsible for:
+
+    Accepting ERC20 tokens for fulfillment requests and holding them in escrow
+
+    Tracking fulfillment records and their statuses
+
+    Managing releaseable pools for successful fulfillments
+
+    Managing accumulated fees for service providers
+
+    In V1_2, supporting swapping of tokens to stablecoins using DEX aggregators
+
+The contract follows a versioned inheritance pattern:
+
+    BandoERC20FulfillableV1: Base functionality for ERC20 token escrow and fulfillment
+
+    BandoERC20FulfillableV1_1: Enhanced functionality and optimizations
+
+    BandoERC20FulfillableV1_2: Added support for stablecoin swapping via DEX aggregators
+
+The BandoERC20Fulfillable responsibilities can be broken down into the following concepts:
+
+    Escrow Management
+
+    Fulfillment Registration
+
+    Fund Management
+
+    Stablecoin Swapping
+
+Escrow Management
+
+The following methods are used to manage the escrow of ERC20 tokens for fulfillment requests:
+
+depositERC20
+
+/**
+ * @notice Deposits ERC20 tokens for a service request
+ * @param serviceID The ID of the service
+ * @param request The ERC20 fulfillment request details
+ * @param feeAmount The fee amount for the service
+ */
+function depositERC20(uint256 serviceID, ERC20FulFillmentRequest memory request, uint256 feeAmount) external
+
+Deposits ERC20 tokens for a fulfillment request. The function validates the request, uses the provided fee amount, and transfers the tokens from the sender to the contract.
+
+Effects:
+
+    Validates that the caller is the router
+
+    Creates a new fulfillment record with the request details
+
+    Transfers the tokens from the sender to the contract using SafeERC20.safeTransferFrom
+
+    Tracks the deposit amount for the payer
+
+    Emits ERC20DepositReceived event with the record details
+
+Requirements:
+
+    Caller MUST be the router
+
+    Sender MUST have approved the contract to transfer at least the required token amount
+
+Fulfillment Registration
+
+The following methods are used to register fulfillment results:
+
+registerFulfillment
+
+/**
+ * @notice Registers a fulfillment for a service
+ * @param serviceID The ID of the service
+ * @param fulfillment The fulfillment result
+ * @return bool Indicating if the registration was successful
+ */
+function registerFulfillment(uint256 serviceID, FulFillmentResult memory fulfillment) external returns (bool)
+
+Registers a fulfillment result and updates the appropriate pools based on the result status.
+
+Effects:
+
+    Validates the fulfillment record exists
+
+    Updates the fulfillment record status
+
+    If status is SUCCESS, adds the token amount to the releaseable pool and fee amount to accumulated fees
+
+    If status is FAILED, authorizes a refund to the payer
+
+Requirements:
+
+    Caller MUST be the manager
+
+    Fulfillment record MUST exist
+
+    Fulfillment record status MUST be PENDING
+
+Fund Management
+
+The following methods are used to manage funds after fulfillment:
+
+beneficiaryWithdraw
+
+/**
+ * @notice Withdraws the beneficiary's available balance to release (fulfilled with success)
+ * @param serviceID The service identifier
+ * @param token The address of the ERC20 token
+ */
+function beneficiaryWithdraw(uint256 serviceID, address token) external
+
+Withdraws the beneficiary's available token balance to release (fulfilled with success).
+
+Effects:
+
+    Validates the caller is the manager
+
+    Retrieves the service details from the registry
+
+    Transfers the releaseable pool amount to the beneficiary
+
+    Resets the releaseable pool for the service and token
+
+Requirements:
+
+    Caller MUST be the manager
+
+    Releaseable pool MUST have a non-zero balance
+
+withdrawAccumulatedFees
+
+/**
+ * @notice Withdraws the accumulated fees for a service
+ * @param serviceID The service identifier
+ * @param token The address of the ERC20 token
+ */
+function withdrawAccumulatedFees(uint256 serviceID, address token) external
+
+Withdraws the accumulated token fees for a given service ID.
+
+Effects:
+
+    Validates the caller is the manager
+
+    Retrieves the service details from the registry
+
+    Transfers the accumulated fees to the beneficiary
+
+    Resets the accumulated fees for the service and token
+
+    Emits ERC20FeesWithdrawn event
+
+Requirements:
+
+    Caller MUST be the manager
+
+    Accumulated fees MUST have a non-zero balance
+
+Stablecoin Swapping (V1_2)
+
+The following methods are available in V1_2 for swapping ERC20 tokens to stablecoins:
+
+swapPoolsToStable
+
+/**
+ * @dev Swaps both releaseable pool and accumulated fees to stablecoins in a single transaction
+ * using an off-chain generated Dex aggregator call.
+ *
+ * Requirements:
+ * - Only the manager can call this.
+ * - A Dex aggregator address must be whitelisted.
+ * - The fromToken must have sufficient combined balance.
+ * - The fulfillment record must exist.
+ *
+ * @param serviceId The service identifier.
+ * @param recordId The fulfillment record identifier.
+ * @param swapData The struct capturing the aggregator call data, tokens, and amounts.
+ */
+function swapPoolsToStable(
+    uint256 serviceId,
+    uint256 recordId,
+    SwapData calldata swapData
+) external nonReentrant onlyManager
+
+Swaps both releaseable pool and accumulated fees to stablecoins in a single transaction using an off-chain generated DEX aggregator call.
+
+Effects:
+
+    Retrieves the fulfillment record
+
+    Calls SwapLib.swapERC20ToStable to perform the swap
+
+Requirements:
+
+    Caller MUST be the manager
+
+    Fulfillment record MUST exist
+
+subtractPoolsAndFees
+
+/**
+ * @dev Subtracts the pools and fees for a given service.
+ * @dev Only the manager can call this.
+ * @param serviceId The service identifier.
+ * @param token The token address.
+ * @param amount The amount to subtract.
+ * @param fees The fees to subtract.
+ */
+function subtractPoolsAndFees(uint256 serviceId, address token, uint256 amount, uint256 fees) external onlyManager
+
+Subtracts the releaseable pools and accumulated fees for a given service and token.
+
+Effects:
+
+    Subtracts the specified amount from the releaseable pool
+
+    Subtracts the specified fees from the accumulated fees
+
+    Emits PoolsAndFeesSubtracted event
+
+Requirements:
+
+    Caller MUST be the manager
+
+withdrawFulfillerPoolAndFees
+
+/**
+ * @dev withdraws an amount to a beneficiary
+ * @dev Only the manager can call this.
+ * @param token The token address
+ * @param amount The amount to withdraw
+ * @param fees The fees to withdraw
+ * @param beneficiary The beneficiary address
+ * @param feesBeneficiary The fees beneficiary address
+ */
+function withdrawFulfillerPoolAndFees(
+    address token,
+    uint256 amount,
+    uint256 fees,
+    address beneficiary,
+    address feesBeneficiary
+) external onlyManager nonReentrant
+
+Withdraws the fulfiller's pool and fees to the specified beneficiaries.
+
+Effects:
+
+    Validates the token and beneficiary addresses
+
+    Transfers the specified amount to the beneficiary
+
+    Transfers the specified fees to the fees beneficiary
+
+    Emits FulfillerPoolAndFeesWithdrawn event
+
+Requirements:
+
+    Caller MUST be the manager
+
+    Token address MUST NOT be zero
+
+    Beneficiary and fees beneficiary addresses MUST NOT be zero
+
+    Contract MUST have sufficient token balance
+
+View Functions
+
+function getReleasePools(uint256 serviceId, address token) external view returns (uint256)
+
+Gets the releaseable pool for a service and token.
+
+function getReleaseablePools(uint256 serviceId, address token) external view returns (uint256)
+
+Gets the releaseable pools for a service and token (V1_2).
+
+function getERC20FeesFor(address token, uint256 serviceId) external view returns (uint256)
+
+Gets the accumulated fees for a service and token.
+
+function getFulfillmentRecord(uint256 serviceId, uint256 recordId) external view returns (ERC20FulFillmentRecord memory)
+
+Gets a fulfillment record by service ID and record ID.
+Events
+
+event FulfillmentEscrowed(uint256 indexed serviceId, uint256 indexed recordId, ERC20FulFillmentRequest request)
+
+Emitted when tokens are escrowed for a fulfillment request.
+
+event FulfillmentRegistered(uint256 indexed serviceId, uint256 indexed recordId, FulFillmentResult result)
+
+Emitted when a fulfillment result is registered.
+
+event BeneficiaryWithdrawn(uint256 indexed serviceId, address indexed beneficiary, address indexed token, uint256 amount)
+
+Emitted when tokens are withdrawn to a beneficiary.
+
+event FeesWithdrawn(uint256 indexed serviceId, address indexed beneficiary, address indexed token, uint256 amount)
+
+Emitted when fees are withdrawn.
+Errors
+
+error InvalidManager(address manager)
+
+Emitted when the caller is not the authorized manager.
+
+error InvalidServiceId(uint256 serviceId)
+
+Emitted when an invalid service ID is provided.
+
+error InsufficientAllowance(uint256 required, uint256 provided)
+
+Emitted when insufficient token allowance is provided for escrow.
+
+error InvalidFulfillmentResult(FulFillmentResultState status)
+
+Emitted when a fulfillment result has an invalid status.
+Access Control
+
+The contract uses a manager-based access control pattern:
+
+    onlyManager modifier restricts functions to be called only by the authorized manager (BandoFulfillmentManager)
+
+    The manager is set during initialization and can be updated by the owner
+
+Integration Points
+
+    Interacts with IFulfillableRegistry to validate services and get fee information
+
+    Interacts with IERC20 to transfer tokens for escrow and withdrawals
+
+    Receives calls from BandoFulfillmentManager to register fulfillments and manage withdrawals
+
+    In V1_2, interacts with DEX aggregators to swap tokens to stablecoins
+    BandoFulfillmentManager
+BandoFulfillmentManager
+Overview
+
+The BandoFulfillmentManager is the central component of the EVM Fulfillment Protocol that manages the registration of fulfillment results and coordinates between fulfillable contracts and the service registry. It serves as the primary entry point for fulfillers to register the results of fulfillment operations and manages the withdrawal of funds for both native currency and ERC20 tokens.
+
+The BandoFulfillmentManager is responsible for:
+
+    Validating that only authorized fulfillers can register results for their services
+
+    Registering fulfillment results with the appropriate fulfillable contracts
+
+    Managing withdrawals of released funds to beneficiaries
+
+    Managing withdrawals of accumulated fees to fulfillers
+
+    In V1_2, managing DEX aggregator whitelisting and token swapping to stablecoins
+
+The contract follows a versioned inheritance pattern:
+
+    BandoFulfillmentManagerV1: Base functionality for fulfillment registration
+
+    BandoFulfillmentManagerV1_1: Enhanced functionality and optimizations
+
+    BandoFulfillmentManagerV1_2: Added support for stablecoin swapping via DEX aggregators
+
+The BandoFulfillmentManager responsibilities can be broken down into the following concepts:
+
+    Fulfillment Registration
+
+    Fund Withdrawal
+
+    Stablecoin Swapping
+
+    DEX Aggregator Management
+
+Fulfillment Registration
+
+The following methods are called by fulfillers to register the results of fulfillment operations:
+
+registerFulfillment
+
+/**
+ * @dev Registers a fulfillment result for a native currency service.
+ * @param serviceID The service identifier.
+ * @param result The FulFillmentResult
+ */
+function registerFulfillment(uint256 serviceID, FulFillmentResult memory result) public virtual
+
+Registers a fulfillment result for a native currency service. The function validates that the caller is the authorized fulfiller for the service and then registers the result with the native currency fulfillable contract.
+
+Effects:
+
+    Validates the caller is the authorized fulfiller for the service
+
+    Calls IBandoFulfillable(_escrow).registerFulfillment(serviceID, result) to register the result
+
+    Emits FulfillmentRegistered(serviceID, result) event
+
+Requirements:
+
+    Caller MUST be the authorized fulfiller for the service or the contract owner
+
+registerERC20Fulfillment
+
+/**
+ * @dev Registers a fulfillment result for an ERC20 token service.
+ * @param serviceID The service identifier.
+ * @param result The FulFillmentResult
+ */
+function registerERC20Fulfillment(uint256 serviceID, FulFillmentResult memory result) public virtual
+
+Registers a fulfillment result for an ERC20 token service. The function validates that the caller is the authorized fulfiller for the service and then registers the result with the ERC20 token fulfillable contract.
+
+Effects:
+
+    Validates the caller is the authorized fulfiller for the service
+
+    Calls IBandoERC20Fulfillable(_erc20_escrow).registerFulfillment(serviceID, result) to register the result
+
+    Emits ERC20FulfillmentRegistered(serviceID, result) event
+
+Requirements:
+
+    Caller MUST be the authorized fulfiller for the service or the contract owner
+
+Fund Withdrawal
+
+The following methods are called by fulfillers to withdraw funds for their services:
+
+beneficiaryWithdraw
+
+/**
+ * @dev Withdraws the beneficiary's available balance to release (fulfilled with success).
+ * Only the fulfiller can withdraw the releaseable pool.
+ * @param serviceId The service identifier.
+ */
+function beneficiaryWithdraw(uint256 serviceId) public virtual
+
+Withdraws the beneficiary's available native currency balance to release (fulfilled with success). Only the fulfiller can withdraw the releaseable pool.
+
+Effects:
+
+    Validates the caller is the authorized fulfiller for the service
+
+    Calls IBandoFulfillable(_escrow).beneficiaryWithdraw(serviceId) to withdraw funds
+
+    Emits WithdrawnToBeneficiary(serviceId, service.beneficiary) event
+
+Requirements:
+
+    Caller MUST be the authorized fulfiller for the service
+
+beneficiaryWithdrawERC20
+
+/**
+ * @dev Withdraws the beneficiary's available ERC20 token balance to release (fulfilled with success).
+ * Only the fulfiller can withdraw the releaseable pool.
+ * @param serviceId The service identifier.
+ * @param token The token address.
+ */
+function beneficiaryWithdrawERC20(uint256 serviceId, address token) public virtual
+
+Withdraws the beneficiary's available ERC20 token balance to release (fulfilled with success). Only the fulfiller can withdraw the releaseable pool.
+
+Effects:
+
+    Validates the caller is the authorized fulfiller for the service
+
+    Calls IBandoERC20Fulfillable(_erc20_escrow).beneficiaryWithdraw(serviceId, token) to withdraw tokens
+
+    Emits WithdrawnToBeneficiary(serviceId, service.beneficiary) event
+
+Requirements:
+
+    Caller MUST be the authorized fulfiller for the service
+
+    token MUST be a valid token address
+
+Stablecoin Swapping
+
+The following methods are available in V1_2 for swapping funds to stablecoins:
+
+fulfillERC20AndSwap
+
+/**
+ * @dev Registers a fulfillment result and swaps
+ * both releaseable pool and accumulated fees to stablecoins in a single transaction.
+ * The swap is done using an off-chain generated Dex aggregator call.
+ * @param serviceID The service identifier.
+ * @param result The FulFillmentResult
+ * @param swapData The struct capturing the aggregator call data, tokens, and amounts.
+ * @param swap Whether to perform the swap or not.
+ */
+function fulfillERC20AndSwap(
+    uint256 serviceID,
+    FulFillmentResult memory result,
+    SwapData memory swapData,
+    bool swap
+) public virtual
+
+Registers a fulfillment result and optionally swaps both releaseable pool and accumulated fees to stablecoins in a single transaction for ERC20 tokens. The swap is done using an off-chain generated DEX aggregator call.
+
+Effects:
+
+    Validates the caller is the authorized fulfiller for the service
+
+    Validates the result status is SUCCESS
+
+    Validates the aggregator is whitelisted
+
+    Calls IBandoERC20Fulfillable(_erc20_escrow).registerFulfillment(serviceID, result) to register the result
+
+    If swap is true, calls IBandoERC20FulfillableV1_2(_erc20_escrow).swapPoolsToStable(serviceID, result.id, swapData) to swap tokens
+
+    Calls _accumulateFulfillerReleaseablePoolAndFees(serviceID, swapData.toToken) to accumulate funds
+
+    Emits ERC20FulfillmentRegistered(serviceID, result) event
+
+Requirements:
+
+    Caller MUST be the authorized fulfiller for the service or the contract owner
+
+    result.status MUST be FulFillmentResultState.SUCCESS
+
+    swapData.callTo MUST be a whitelisted aggregator
+
+DEX Aggregator Management
+
+The following methods are available in V1_2 for managing DEX aggregators:
+
+addAggregator
+
+/**
+ * @dev Adds a Dex aggregator address to the whitelist
+ * @param aggregator The Dex aggregator contract address
+ */
+function addAggregator(address aggregator) external onlyOwner
+
+Adds a DEX aggregator address to the whitelist. Only the contract owner can add aggregators.
+
+Effects:
+
+    Validates the aggregator address is not zero
+
+    Adds the aggregator to the whitelist
+
+    Emits AggregatorAdded(aggregator) event
+
+Requirements:
+
+    Caller MUST be the contract owner
+
+    aggregator MUST NOT be the zero address
+
+Parameterization
+
+    _escrow: Address of the native currency fulfillable contract
+
+    _erc20_escrow: Address of the ERC20 token fulfillable contract
+
+    _serviceRegistry: Address of the service registry contract
+    BandoRouter
+BandoRouter
+Overview
+
+The BandoRouter serves as the main entry point for users to submit fulfillment requests. It routes requests to the appropriate fulfillable contracts, validates service information, and ensures that tokens and amounts meet the required criteria before processing.
+
+The BandoRouter is responsible for:
+
+    Validating service IDs and references against the registry
+
+    Calculating fee amounts based on service configurations
+
+    Routing native currency fulfillment requests to the BandoFulfillable contract
+
+    Routing ERC20 token fulfillment requests to the BandoERC20Fulfillable contract
+
+    Validating that ERC20 tokens are registered in the token registry
+
+The contract follows a versioned inheritance pattern:
+
+    BandoRouterV1: Base functionality for request routing
+
+    BandoRouterV1_1: Enhanced functionality and optimizations
+
+The BandoRouter responsibilities can be broken down into the following concepts:
+
+    Request Routing
+
+    Service Validation
+
+    Fee Calculation
+
+Request Routing
+
+The following methods are called by users to submit fulfillment requests:
+
+requestService
+
+/**
+ * @notice Requests a fulfillment using native currency
+ * @param serviceId The service identifier
+ * @param serviceRef The service reference
+ * @param fiatAmount The fiat amount to be charged for the fulfillable
+ */
+function requestService(uint256 serviceId, string calldata serviceRef, uint256 fiatAmount) external payable
+
+Allows a user to request a fulfillment using native currency. The function validates the service information, calculates the fee amount, and forwards the request to the BandoFulfillable contract for escrow.
+
+Effects:
+
+    Validates the service ID and reference
+
+    Retrieves the service details and fee percentage from the registry
+
+    Calculates the fee amount based on the sent value and fee percentage
+
+    Creates a FulFillmentRequest with the caller as the payer
+
+    Calls IBandoFulfillable(_escrow).escrow(serviceId, request) to escrow the funds
+
+    Emits FulfillmentRequested(serviceId, serviceRef, fiatAmount, msg.sender, msg.value) event
+
+Requirements:
+
+    serviceId MUST be a valid service ID in the registry
+
+    serviceRef MUST be a valid reference for the service
+
+    fiatAmount MUST be greater than zero
+
+    Sent value MUST be greater than zero
+
+requestERC20Service
+
+string calldata serviceRef,
+uint256 fiatAmount,
+address token,
+uint256 tokenAmount
+
+) external
+
+Requests a fulfillment using ERC20 tokens.
+
+### Service Validation
+
+```solidity
+function validateService(uint256 serviceId, string calldata serviceRef) public view returns (bool)
+
+Validates if a service ID and reference are valid.
+Fee Calculation
+
+function calculateFeeAmount(uint256 amount, uint16 feeAmountBasisPoints) public pure returns (uint256)
+
+Calculates the fee amount based on the total amount and fee basis points.
+Events
+
+event FulfillmentRequested(uint256 indexed serviceId, string serviceRef, uint256 fiatAmount, address payer, uint256 weiAmount)
+
+Emitted when a native currency fulfillment is requested.
+
+event ERC20FulfillmentRequested(uint256 indexed serviceId, string serviceRef, uint256 fiatAmount, address payer, address token, uint256 tokenAmount)
+
+Emitted when an ERC20 token fulfillment is requested.
+Errors
+
+error InvalidServiceId(uint256 serviceId)
+
+Emitted when an invalid service ID is provided.
+
+error InvalidServiceRef(string serviceRef)
+
+Emitted when an invalid service reference is provided.
+
+error TokenNotRegistered(address token)
+
+Emitted when an unregistered token is used for fulfillment.
+Access Control
+
+The router is designed to be used by any user, with validation performed through the service registry:
+
+    Service validation ensures that only valid service IDs and references are processed
+
+    Token validation ensures that only registered tokens are used for ERC20 fulfillments
+
+Integration Points
+
+    Interacts with IFulfillableRegistry to validate services and get fee information
+
+    Interacts with IERC20TokenRegistry to validate tokens for ERC20 fulfillments
+
+    Calls IBandoFulfillable.escrow() to escrow native currency for fulfillment
+
+    Calls IBandoERC20Fulfillable.escrow() to escrow ERC20 tokens for fulfillment
+    FulfillmentRequestLib
+FulfillmentRequestLib
+Overview
+
+The FulfillmentRequestLib library provides utility functions for validating fulfillment requests and calculating fees. It is used by the BandoRouter to ensure that requests meet the required criteria before being forwarded to the fulfillable contracts.
+
+The library is responsible for:
+
+    Validating that fulfillment requests have valid amounts and references
+
+    Checking that ERC20 tokens are whitelisted in the token registry
+
+    Calculating service fees and swap fees based on configured basis points
+
+The FulfillmentRequestLib responsibilities can be broken down into the following concepts:
+
+    Request Validation
+
+    Fee Calculation
+
+Request Validation
+
+The following methods are used to validate fulfillment requests:
+
+validateRequest
+
+/**
+ * @notice validateRequest
+ * @dev It checks if the amount sent is greater than zero, if the fiat amount is greater than zero,
+ * @param serviceID the product/service ID
+ * @param request a valid FulFillmentRequest
+ * @param fulfillableRegistry the registry address
+ */
+function validateRequest(
+    uint256 serviceID,
+    FulFillmentRequest memory request,
+    address fulfillableRegistry
+) internal view returns (Service memory)
+
+Validates a native currency fulfillment request by checking that the amount sent is greater than zero, the fiat amount is greater than zero, and the service reference is valid. Returns the service details if the request is valid.
+
+Effects:
+
+    Checks if the sent value is greater than zero
+
+    Checks if the fiat amount is greater than zero
+
+    Retrieves the service details from the registry
+
+    Validates that the service reference is valid
+
+    Returns the service details
+
+Requirements:
+
+    msg.value MUST be greater than zero
+
+    request.fiatAmount MUST be greater than zero
+
+    request.serviceRef MUST be a valid reference for the service in the registry
+
+validateERC20Request
+
+/**
+ * @notice validateERC20Request
+ * @dev It checks if the token amount sent is greater than zero, if the fiat amount is greater than zero,
+ * if the service reference is valid and returns the service
+ * @dev We will change the way we handle fees so this validation is prone to change.
+ * @param serviceID the product/service ID
+ * @param request a valid FulFillmentRequest
+ * @param fulfillableRegistry the registry address
+ * @param tokenRegistry the token registry address
+ */
+function validateERC20Request(
+  uint256 serviceID,
+  ERC20FulFillmentRequest memory request,
+  address fulfillableRegistry,
+  address tokenRegistry
+) internal view returns (Service memory)
+
+Validates an ERC20 token fulfillment request by checking that the token amount is greater than zero, the fiat amount is greater than zero, the token is whitelisted, and the service reference is valid. Returns the service details if the request is valid.
+
+Effects:
+
+    Checks if the token amount is greater than zero
+
+    Checks if the fiat amount is greater than zero
+
+    Checks if the token is whitelisted in the token registry
+
+    Retrieves the service details from the registry
+
+    Validates that the service reference is valid
+
+    Returns the service details
+
+Requirements:
+
+    request.tokenAmount MUST be greater than zero
+
+    request.fiatAmount MUST be greater than zero
+
+    request.token MUST be whitelisted in the token registry
+
+    request.serviceRef MUST be a valid reference for the service in the registry
+
+Fee Calculation
+
+The following method is used to calculate fees for fulfillment requests:
+
+calculateFees
+
+/**
+ * @notice calculateFees: Gets service fee and swap fee (if any)
+ * and calculates the fee based on the configured fees.
+ * @dev Fees are represented in basis points to work with integers
+ * on fee percentages below 1%
+ * The fee is also rounded up to the nearest integer.
+ * This is to avoid rounding errors when calculating the total amount.
+ * And to avoid underpaying.
+ * totalFee = (amount * basisPoints + 9999) / 10000
+ * totalAmount = amount + serviceFee + swapFee
+ * @param fulfillableRegistry Service registry contract address
+ * @param tokenRegistry Token registry contract address
+ * @param serviceID Service/product ID
+ * @param tokenAddress Token address (zero address for native coin)
+ * @param amount The amount to calculate the fees for
+ */
+function calculateFees(
+    address fulfillableRegistry,
+    address tokenRegistry,
+    uint256 serviceID,
+    address tokenAddress,
+    uint256 amount
+) internal view returns (uint256 serviceFeeAmount)
+
+Calculates the service fee and swap fee (if any) based on the configured fee basis points. The fees are calculated as a percentage of the amount and rounded up to the nearest integer to avoid underpaying.
+
+Effects:
+
+    Retrieves the service fee basis points from the registry
+
+    Calculates the service fee as (amount * feeBasisPoints + 9999) / 10000
+
+    Retrieves the swap fee basis points from the token registry (if applicable)
+
+    Calculates the swap fee as (amount * swapFeeBasisPoints + 9999) / 10000 (if applicable)
+
+    Returns the total fee (service fee + swap fee)
+
+Errors
+
+error InsufficientAmount()
+
+Emitted when the amount sent is zero.
+
+error InvalidFiatAmount()
+
+Emitted when the fiat amount is zero.
+
+error InvalidRef()
+
+Emitted when the service reference is not valid in the registry.
+
+error OverflowError()
+
+Emitted when an overflow occurs during fee calculation.
+
+error AmountMismatch()
+
+Emitted when fee amount validations fail.
+
+error UnsupportedToken(address token)
+
+Emitted when the token is not whitelisted in the token registry.

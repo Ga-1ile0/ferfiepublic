@@ -210,6 +210,12 @@ export default function CryptoTransfer({ className }: { className?: string }) {
     if (!recipient) return false;
     if (!ethers.isAddress(recipient)) return false;
 
+    // If crypto transfers are disabled but family wallet is enabled,
+    // only allow sending to family wallet
+    if (!permissions.cryptoTransferEnabled && permissions.includeFamilyWallet) {
+      return !!familyWalletAddress && recipient.toLowerCase() === familyWalletAddress.toLowerCase();
+    }
+
     // If there are allowed addresses specified, recipient must be in the list
     if (
       permissions.allowedRecipientAddresses.length > 0 &&
@@ -320,7 +326,7 @@ export default function CryptoTransfer({ className }: { className?: string }) {
         <Button
           size="sm"
           variant="outline"
-          disabled={!permissions.cryptoTransferEnabled}
+          disabled={!permissions.cryptoTransferEnabled && !permissions.includeFamilyWallet}
           className="flex items-center gap-2 text-sm bg-white/20 hover:bg-white/30 text-white border-0"
         >
           <Wallet className="h-4 w-4" />
@@ -349,7 +355,10 @@ export default function CryptoTransfer({ className }: { className?: string }) {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-4">
                 <TabsTrigger value="my-wallet">My Wallet</TabsTrigger>
-                <TabsTrigger value="send" disabled={!permissions.cryptoTransferEnabled}>
+                <TabsTrigger
+                  value="send"
+                  disabled={!permissions.cryptoTransferEnabled && !permissions.includeFamilyWallet}
+                >
                   Send
                 </TabsTrigger>
               </TabsList>
@@ -362,7 +371,13 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                   </div>
                 ) : (
                   <>
-                    <div className="flex flex-col items-center space-y-4 p-4 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-lg border-2 border-black shadow-yellow-700">
+                    <div
+                      className="flex flex-col items-center space-y-4 p-4 text-white rounded-lg border-2 border-black shadow-yellow-700"
+                      style={{
+                        backgroundImage:
+                          'linear-gradient(to right, rgb(59, 130, 246), rgb(6, 182, 212))',
+                      }}
+                    >
                       <div className="p-2 bg-white rounded-lg">
                         {walletAddress && (
                           <QRCode value={walletAddress} size={180} className="rounded-md" />
@@ -371,6 +386,9 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                       <div className="flex flex-col items-center">
                         <p className="text-sm text-muted-foreground mb-1">Your Wallet Address</p>
                         <div className="flex items-center space-x-2">
+                          <div className="flex items-center gap-1">
+                            <img src="/base.png" alt="Base Logo" className="h-4 w-4" />
+                          </div>
                           <code className="text-xs bg-slate-400 px-2 py-1 rounded">
                             {walletAddress ? formatAddress(walletAddress) : 'Loading...'}
                           </code>
@@ -404,7 +422,11 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                           tokensWithBalances.map(token => (
                             <div
                               key={token.contract}
-                              className="flex items-center justify-between p-3 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-lg border-2 border-black shadow-yellow-700"
+                              className="flex items-center justify-between p-3 text-white rounded-lg border-2 border-black shadow-yellow-700"
+                              style={{
+                                backgroundImage:
+                                  'linear-gradient(to right, rgb(59, 130, 246), rgb(6, 182, 212))',
+                              }}
                             >
                               <div className="flex items-center space-x-3">
                                 <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-100 flex items-center justify-center">
@@ -501,7 +523,7 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                             Amount
                           </Label>
                           <span className="font-medium">
-                            {amount.toFixed(6)} {selectedToken.symbol}
+                            {amount > 0 ? amount.toString() : '0'} {selectedToken.symbol}
                           </span>
                         </div>
                         <div className="space-y-2">
@@ -509,8 +531,14 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                             id="amount"
                             type="number"
                             placeholder="0.00"
-                            value={amount.toFixed(6)}
-                            onChange={e => setAmount(parseFloat(e.target.value) || 0)}
+                            value={amount === 0 ? '' : amount}
+                            onChange={e => {
+                              const value = e.target.value;
+                              // Only update if the value is a valid number or empty
+                              if (value === '' || !isNaN(parseFloat(value))) {
+                                setAmount(value === '' ? 0 : parseFloat(value));
+                              }
+                            }}
                           />
                           <div className="flex justify-between text-xs text-muted-foreground">
                             <span>Available: {selectedToken.balance.toFixed(4)}</span>
@@ -548,13 +576,19 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                           value={recipient}
                           onChange={e => {
                             // Only allow direct input if no specific addresses are required
-                            if (permissions.allowedRecipientAddresses.length === 0) {
+                            if (
+                              permissions.allowedRecipientAddresses.length === 0 &&
+                              permissions.cryptoTransferEnabled
+                            ) {
                               setRecipient(e.target.value);
                               // Clear any existing nickname
                               setNickname('');
                             }
                           }}
-                          disabled={permissions.allowedRecipientAddresses.length > 0}
+                          disabled={
+                            permissions.allowedRecipientAddresses.length > 0 ||
+                            !permissions.cryptoTransferEnabled
+                          }
                           className="pl-10 text-white placeholder:text-white/70"
                         />
                         <Wallet className="absolute left-3 top-2.5 h-5 w-5 text-white" />
@@ -585,7 +619,8 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                             </Button>
                           )}
 
-                          {permissions.allowedRecipientAddresses.length > 0
+                          {permissions.cryptoTransferEnabled &&
+                          permissions.allowedRecipientAddresses.length > 0
                             ? permissions.allowedRecipientAddresses.map((addr, idx) => (
                                 <Button
                                   key={idx}
@@ -614,28 +649,40 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                       </div>
                     </div>
 
-                    {permissions.allowedRecipientAddresses.length > 0 ? (
+                    {permissions.cryptoTransferEnabled ? (
+                      permissions.allowedRecipientAddresses.length > 0 ? (
+                        <div className="bg-white/20 text-yellow-600 backdrop-blur-sm border-2 border-black p-3 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4" />
+                            <h3 className="font-medium">Restricted Transfers</h3>
+                          </div>
+                          <p className="text-sm mt-1">
+                            You can only send to the approved wallet addresses listed above.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-blue-50/50 text-blue-700 backdrop-blur-sm border-2 border-blue-200 p-3 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <Wallet className="h-4 w-4" />
+                            <h3 className="font-medium">Send to Any Address</h3>
+                          </div>
+                          <p className="text-sm mt-1">
+                            You can send to any valid Ethereum address. Make sure to verify the
+                            address is correct before sending.
+                          </p>
+                        </div>
+                      )
+                    ) : permissions.includeFamilyWallet ? (
                       <div className="bg-white/20 text-yellow-600 backdrop-blur-sm border-2 border-black p-3 rounded-lg">
                         <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4" />
-                          <h3 className="font-medium">Restricted Transfers</h3>
+                          <Users className="h-4 w-4" />
+                          <h3 className="font-medium">Parents Wallet Only</h3>
                         </div>
                         <p className="text-sm mt-1">
-                          You can only send to the approved wallet addresses listed above.
+                          You can only send crypto to your parents wallet at this time.
                         </p>
                       </div>
-                    ) : (
-                      <div className="bg-blue-50/50 text-blue-700 backdrop-blur-sm border-2 border-blue-200 p-3 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <Wallet className="h-4 w-4" />
-                          <h3 className="font-medium">Send to Any Address</h3>
-                        </div>
-                        <p className="text-sm mt-1">
-                          You can send to any valid Ethereum address. Make sure to verify the
-                          address is correct before sending.
-                        </p>
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
 
@@ -664,7 +711,7 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                         <span className="text-muted-foreground">Amount:</span>
                         <div className="text-right">
                           <div>
-                            {amount} {selectedToken.symbol}
+                            {amount > 0 ? amount.toString() : '0'} {selectedToken.symbol}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             <Currency

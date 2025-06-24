@@ -15,7 +15,7 @@ import {
 import { Currency } from '@/components/shared/currency-symbol';
 import { useAuth } from '@/contexts/authContext';
 import { getKidPermissions } from '@/server/permissions';
-import { availableTokens, getMultiTokenBalances } from '@/lib/tokens';
+import { availableTokens, getMultiTokenBalances, getTokenBalance } from '@/lib/tokens';
 import type {
     BandoProductVariant,
     BandoQuoteResponse,
@@ -162,13 +162,8 @@ export function GiftCardBuyDrawer({
 
                 // Get user's balance for this token
                 if (user.walletAddress) {
-                    const balances = await getMultiTokenBalances(user.walletAddress);
-                    const tokenIndex = availableTokens.findIndex(
-                        t => t.contract.toLowerCase() === tokenInfo.contract.toLowerCase()
-                    );
-
-                    if (tokenIndex >= 0) {
-                        const balance = balances[tokenIndex] || 0;
+                    const balance = await getTokenBalance(tokenInfo.contract, user.walletAddress);
+                    if (balance) {
                         setStablecoinBalance(balance);
                         if (variant) {
                             setHasSufficientBalance(balance >= parseFloat(variant.price.fiatValue));

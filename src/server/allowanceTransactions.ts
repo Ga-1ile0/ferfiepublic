@@ -169,11 +169,20 @@ export const claimAllowance = async (childId: string) => {
     } catch (blockchainError) {
       console.error('Blockchain transfer error:', blockchainError);
 
-      // The database transaction was created, but the blockchain transfer failed
+      // Delete the transaction record since the blockchain transfer failed
+      await db.transaction.delete({
+        where: { id: transaction.id }
+      });
+
+      // Revert the allowance next date update to keep it marked as unclaimed
+      await db.allowance.update({
+        where: { id: allowance.id },
+        data: { nextDate: allowance.nextDate } // Restore the original nextDate
+      });
+
       return {
-        status: 202,
-        data: transaction,
-        message: 'Transaction recorded but blockchain transfer failed'
+        status: 500,
+        message: 'Failed to process allowance claim due to blockchain error. Please try again later.'
       };
     }
   } catch (error) {
