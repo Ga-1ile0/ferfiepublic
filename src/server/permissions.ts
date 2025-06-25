@@ -25,6 +25,11 @@ export const getKidPermissions = async (kidId: string) => {
           maxNftTradeAmount: null,
           maxGiftCardAmount: null,
           requireGiftCardApproval: true,
+          // Daily spending limits
+          dailySpendingLimit: null,
+          dailyTradingLimit: null,
+          dailyNftLimit: null,
+          dailyTransferLimit: null,
           // Crypto transfer settings
           cryptoTransferEnabled: false,
           maxTransferAmount: null,
@@ -70,6 +75,11 @@ export const updateKidPermissions = async (
     maxNftTradeAmount?: number | null;
     maxGiftCardAmount?: number | null;
     requireGiftCardApproval?: boolean;
+    // Daily spending limits
+    dailySpendingLimit?: number | null;
+    dailyTradingLimit?: number | null;
+    dailyNftLimit?: number | null;
+    dailyTransferLimit?: number | null;
     // Crypto transfer permissions
     cryptoTransferEnabled?: boolean;
     maxTransferAmount?: number | null;
@@ -150,4 +160,75 @@ export const canMakeNFTTransaction = async (kidId: string, amount: number) => {
     return false;
   }
   return true;
+};
+
+/**
+ * Check if a user can make a trading transaction based on permissions
+ */
+export const canMakeTradingTransaction = async (kidId: string, amount: number) => {
+  const perms = await getKidPermissions(kidId);
+  if (perms.status !== 200 || !perms.data) {
+    return false;
+  }
+  const data = perms.data;
+  if (!data.tradingEnabled) {
+    return false;
+  }
+  if (data.maxTradeAmount !== null && amount > data.maxTradeAmount) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Check if a user can make a crypto transfer based on permissions
+ */
+export const canMakeCryptoTransfer = async (kidId: string, amount: number) => {
+  const perms = await getKidPermissions(kidId);
+  if (perms.status !== 200 || !perms.data) {
+    return false;
+  }
+  const data = perms.data;
+  if (!data.cryptoTransferEnabled) {
+    return false;
+  }
+  if (data.maxTransferAmount !== null && amount > data.maxTransferAmount) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Get remaining daily spending limits for a user
+ */
+export const getDailySpendingLimits = async (kidId: string) => {
+  try {
+    const { getDailySpendingSummary } = await import('./spending-tracker');
+
+    const perms = await getKidPermissions(kidId);
+    if (perms.status !== 200 || !perms.data) {
+      return { success: false, message: 'Unable to fetch permissions' };
+    }
+
+    const permissions = perms.data;
+    const spendingSummary = await getDailySpendingSummary(kidId);
+
+    return {
+      success: true,
+      data: {
+        dailyTradingLimit: permissions.maxTradeAmount,
+        dailyNftLimit: permissions.maxNftTradeAmount,
+        dailyTransferLimit: permissions.maxTransferAmount,
+        spentToday: spendingSummary,
+        remainingLimits: {
+          trading: permissions.maxTradeAmount && permissions.maxTradeAmount > 0 ? Math.max(0, permissions.maxTradeAmount - spendingSummary.tradingSpent) : null,
+          nft: permissions.maxNftTradeAmount && permissions.maxNftTradeAmount > 0 ? Math.max(0, permissions.maxNftTradeAmount - spendingSummary.nftSpent) : null,
+          transfer: permissions.maxTransferAmount && permissions.maxTransferAmount > 0 ? Math.max(0, permissions.maxTransferAmount - spendingSummary.transferSpent) : null
+        }
+      }
+    };
+  } catch (error) {
+    console.error('Error getting daily spending limits:', error);
+    return { success: false, message: 'Failed to get spending limits' };
+  }
 };

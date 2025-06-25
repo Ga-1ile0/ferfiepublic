@@ -19,8 +19,17 @@ import { getKidPermissions } from '@/server/permissions';
 import { sendTokens, getUserAddress } from '@/server/crypto/transfer';
 import QRCode from 'react-qr-code';
 import { Currency } from '@/components/shared/currency-symbol';
-import { availableTokens, getMultiTokenBalances, getExchangeRate } from '@/lib/tokens';
+import {
+  availableTokens,
+  getMultiTokenBalances,
+  getExchangeRate,
+  getRealExchangeRate,
+  getEthStableRate,
+} from '@/lib/tokens';
+import { getDailySpendingLimits } from '@/server/permissions';
+import { canMakeSpending, recordSpending } from '@/server/spending-tracker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import {
   ArrowRight,
   CheckCircle2,
@@ -34,6 +43,7 @@ import {
   Users,
 } from 'lucide-react';
 import { ethers } from 'ethers';
+import { devLog } from '@/lib/devlog';
 
 // Type definition for token with balance
 type TokenWithBalance = {
@@ -93,6 +103,10 @@ export default function CryptoTransfer({ className }: { className?: string }) {
   // Family wallet address
   const [familyWalletAddress, setFamilyWalletAddress] = useState<string>('');
 
+  // Spending limits state
+  const [spendingLimits, setSpendingLimits] = useState<any>(null);
+  const [isLoadingLimits, setIsLoadingLimits] = useState(false);
+
   // Load user's wallet address
   useEffect(() => {
     if (!user?.id || !open) return;
@@ -105,6 +119,27 @@ export default function CryptoTransfer({ className }: { className?: string }) {
       }
     })();
   }, [user?.id, open]);
+
+  // Function to refresh spending limits
+  const refreshSpendingLimits = async () => {
+    if (!user?.id) return;
+    setIsLoadingLimits(true);
+    try {
+      const limits = await getDailySpendingLimits(user.id);
+      setSpendingLimits(limits.success ? limits.data : null);
+    } catch (error) {
+      console.error('Error fetching spending limits:', error);
+    } finally {
+      setIsLoadingLimits(false);
+    }
+  };
+
+  // Load spending limits when dialog opens
+  useEffect(() => {
+    if (open && user?.id) {
+      refreshSpendingLimits();
+    }
+  }, [open, user?.id]);
 
   // Load user permissions
   useEffect(() => {
@@ -286,6 +321,43 @@ export default function CryptoTransfer({ className }: { className?: string }) {
       setError(`Invalid amount for ${selectedToken.symbol}`);
       return;
     }
+
+    // Check spending limits before proceeding
+    try {
+      const userCurrency = user.family?.currency || 'USDC';
+      let amountInStable = amount;
+
+      // Convert to stablecoin value if not already in user's currency
+      if (selectedToken.symbol !== userCurrency) {
+        let exchangeRate;
+
+        // Use getStableEthRate for ETH, getRealExchangeRate for other tokens
+        if (selectedToken.contract === '0x0000000000000000000000000000000000000000') {
+          // This is ETH
+          exchangeRate = await getEthStableRate(user.family?.currencyAddress || '');
+        } else {
+          // Other tokens
+          exchangeRate = await getRealExchangeRate(selectedToken.symbol, userCurrency);
+        }
+
+        if (exchangeRate) {
+          amountInStable = amount * exchangeRate;
+          devLog.log('Exchange rate', exchangeRate);
+          devLog.log('Amount in stable', amountInStable);
+        }
+      }
+
+      const canSpend = await canMakeSpending(user.id, 'TRANSFER', amount, selectedToken.contract);
+      if (!canSpend.canSpend) {
+        setError(canSpend.reason || 'Transfer amount exceeds daily spending limit');
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking spending limits:', error);
+      setError('Unable to verify spending limits. Please try again.');
+      return;
+    }
+
     setIsSending(true);
     setError(null);
 
@@ -296,6 +368,48 @@ export default function CryptoTransfer({ className }: { className?: string }) {
       console.log(nickname);
       const result = await sendTokens(user.id, selectedToken.symbol, amount, recipient, nickname);
       if (result.status === 200) {
+        // Record the spending transaction
+        try {
+          const userCurrency = user.family?.currencyAddress || 'USDC';
+          let amountInStable = amount;
+          let exchangeRate = 1;
+
+          if (selectedToken.symbol !== userCurrency) {
+            let rate;
+
+            // Use getStableEthRate for ETH, getRealExchangeRate for other tokens
+            if (selectedToken.contract === '0x0000000000000000000000000000000000000000') {
+              // This is ETH
+              rate = await getEthStableRate(user.family?.currencyAddress || '');
+            } else {
+              // Other tokens
+              rate = await getRealExchangeRate(selectedToken.contract, userCurrency);
+            }
+
+            if (rate) {
+              exchangeRate = rate;
+              amountInStable = amount * rate;
+              devLog.log('Exchange rate', rate);
+              devLog.log('Amount in stable', amountInStable);
+            }
+          }
+
+          await recordSpending({
+            userId: user.id,
+            category: 'TRANSFER',
+            amountInStablecoin: amountInStable,
+            originalAmount: amount,
+            originalToken: selectedToken.symbol,
+            transactionHash: result.txHash,
+          });
+
+          // Refresh spending limits after successful transaction
+          await refreshSpendingLimits();
+        } catch (recordError) {
+          console.error('Error recording spending:', recordError);
+          // Don't fail the transaction if recording fails
+        }
+
         setTxHash(result.txHash || 'unknown');
         setIsComplete(true);
         setTimeout(() => {
@@ -546,16 +660,59 @@ export default function CryptoTransfer({ className }: { className?: string }) {
                               variant="ghost"
                               size="sm"
                               className="h-5 p-0 underline"
-                              onClick={() => setAmount(Number(selectedToken.balance.toFixed(6)))}
+                              onClick={() => {
+                                // Use the daily transfer limit as max if it's set and lower than balance
+                                const maxTransferAmount =
+                                  spendingLimits?.remainingLimits?.transfer ||
+                                  selectedToken.balance;
+                                const maxAmount = Math.min(
+                                  selectedToken.balance,
+                                  maxTransferAmount
+                                );
+                                setAmount(Number(maxAmount.toFixed(6)));
+                              }}
                             >
                               Max
                             </Button>
                           </div>
                         </div>
-                        {permissions.maxTransferAmount && (
-                          <div className="text-xs text-muted-foreground">
-                            Maximum transfer limit:{' '}
-                            <Currency amount={permissions.maxTransferAmount} />
+
+                        {/* Daily Spending Limits Display with Progress Bars */}
+                        {spendingLimits && (
+                          <div className="bg-muted/50 p-3 rounded-lg space-y-3 mt-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">Daily Transfer Limit</span>
+                              {isLoadingLimits && (
+                                <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+                              )}
+                            </div>
+
+                            {spendingLimits.dailyTransferLimit && (
+                              <div className="space-y-2">
+                                <div className="flex gap-1 justify-end text-sm">
+                                  <Currency amount={spendingLimits.spentToday.transferSpent} /> /
+                                  <Currency amount={spendingLimits.dailyTransferLimit} />
+                                </div>
+                                <Progress
+                                  value={
+                                    (spendingLimits.spentToday.transferSpent /
+                                      spendingLimits.dailyTransferLimit) *
+                                    100
+                                  }
+                                  className="h-2"
+                                />
+                                <div className="text-xs justify-end flex gap-1 w-full">
+                                  <Currency amount={spendingLimits.remainingLimits.transfer || 0} />{' '}
+                                  remaining
+                                </div>
+                              </div>
+                            )}
+
+                            {!spendingLimits.dailyTransferLimit && (
+                              <div className="text-xs text-muted-foreground text-center">
+                                No daily transfer limits set
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

@@ -59,6 +59,12 @@ export const getFamilyTransactions = async (familyId: string, limit = 6) => {
     const transactions = await db.transaction.findMany({
       where: {
         userId: { in: memberIds },
+        // Exclude spending tracking records from dashboard display
+        description: {
+          not: {
+            contains: 'spending:'
+          }
+        }
       },
       include: {
         user: {
@@ -92,7 +98,15 @@ export const getUserTransactions = async (userId: string, limit = 10) => {
     if (!userId) return { status: 400, message: 'User ID is required' };
 
     const transactions = await db.transaction.findMany({
-      where: { userId },
+      where: {
+        userId,
+        // Exclude spending tracking records from dashboard display
+        description: {
+          not: {
+            contains: 'spending:'
+          }
+        }
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -122,7 +136,15 @@ export const getChildTransactions = async (childId: string, page = 1, pageSize =
 
     // Get transactions with pagination
     const transactions = await db.transaction.findMany({
-      where: { userId: childId },
+      where: {
+        userId: childId,
+        // Exclude spending tracking records from dashboard display
+        description: {
+          not: {
+            contains: 'spending:'
+          }
+        }
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -146,7 +168,15 @@ export const getChildTransactions = async (childId: string, page = 1, pageSize =
 
     // Get total count for pagination
     const totalCount = await db.transaction.count({
-      where: { userId: childId },
+      where: {
+        userId: childId,
+        // Exclude spending tracking records from count
+        description: {
+          not: {
+            contains: 'spending:'
+          }
+        }
+      },
     });
 
     return {

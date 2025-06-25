@@ -22,7 +22,10 @@ import {
   getMultiTokenBalances,
   getExchangeRate,
   getEthStableRate,
+  getRealExchangeRate,
 } from '@/lib/tokens';
+import { getDailySpendingLimits } from '@/server/permissions';
+import { canMakeSpending, recordSpending } from '@/server/spending-tracker';
 import type { Token, TokenData } from '@/types/nft';
 import { devLog } from '@/lib/devlog';
 
@@ -54,6 +57,10 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
     }[]
   >([]);
   const { user } = useAuth();
+
+  // Spending limits state
+  const [spendingLimits, setSpendingLimits] = useState<any>(null);
+  const [isLoadingLimits, setIsLoadingLimits] = useState(false);
 
   // Reset state when drawer opens/closes
   useEffect(() => {
@@ -99,6 +106,27 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
       fetchPermissions();
     }
   }, [open, user]);
+
+  // Function to refresh spending limits
+  const refreshSpendingLimits = async () => {
+    if (!user?.id) return;
+    setIsLoadingLimits(true);
+    try {
+      const limits = await getDailySpendingLimits(user.id);
+      setSpendingLimits(limits.success ? limits.data : null);
+    } catch (error) {
+      console.error('Error fetching spending limits:', error);
+    } finally {
+      setIsLoadingLimits(false);
+    }
+  };
+
+  // Load spending limits when drawer opens
+  useEffect(() => {
+    if (open && user?.id) {
+      refreshSpendingLimits();
+    }
+  }, [open, user?.id]);
 
   // Fetch token balances and convert to user's currency
   useEffect(() => {
@@ -208,6 +236,24 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
       const ethPrice = token?.market?.topBid?.price?.amount?.native;
       const totalPrice = price * 1.02;
 
+      // Check spending limits before proceeding
+      const familyCurrency = user.family?.currencyAddress || '';
+      let amountInStable = totalPrice;
+
+      // Convert to stablecoin value if not already in user's currency
+      if (paymentToken.symbol !== familyCurrency) {
+        const exchangeRate = await getRealExchangeRate(paymentToken.contract, familyCurrency);
+        if (exchangeRate) {
+          amountInStable = totalPrice * exchangeRate;
+        }
+      }
+
+      const canSpend = await canMakeSpending(user.id, 'NFT', amountInStable, selectedCurrency);
+      if (!canSpend.canSpend) {
+        toast.error(canSpend.reason || 'NFT purchase amount exceeds daily spending limit');
+        return;
+      }
+
       devLog.log('Stable Rate:', stableRate);
       // Call the server-side function to execute the purchase
       const result = await buyNFT(
@@ -221,6 +267,32 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
       );
 
       if (result.success) {
+        // Record the spending transaction
+        try {
+          let exchangeRate = 1;
+          if (paymentToken.symbol !== familyCurrency) {
+            const rate = await getRealExchangeRate(paymentToken.symbol, familyCurrency);
+            if (rate) {
+              exchangeRate = rate;
+            }
+          }
+
+          await recordSpending({
+            userId: user.id,
+            category: 'NFT',
+            amountInStablecoin: amountInStable,
+            originalAmount: totalPrice,
+            originalToken: paymentToken.symbol,
+            transactionHash: result.txHash,
+          });
+
+          // Refresh spending limits after successful transaction
+          await refreshSpendingLimits();
+        } catch (recordError) {
+          console.error('Error recording spending:', recordError);
+          // Don't fail the transaction if recording fails
+        }
+
         toast.success('NFT purchased successfully!');
         onOpenChange(false); // Close the drawer
       } else {
@@ -359,6 +431,55 @@ export function NFTBuyDrawer({ open, onOpenChange, token }: NFTBuyDrawerProps) {
                     </div>
                   )}
                 </div>
+
+                {/* Daily Spending Limits Display */}
+                {spendingLimits && (
+                  <div className="bg-muted/50 p-3 rounded-lg space-y-2 mt-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Daily Spending Limits</span>
+                      {isLoadingLimits && (
+                        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+                      )}
+                    </div>
+
+                    {spendingLimits.dailySpendingLimit && (
+                      <div className="flex justify-between text-xs">
+                        <span>Total Daily Limit:</span>
+                        <span className="font-medium">
+                          <Currency amount={spendingLimits.spentToday.totalSpent} /> /{' '}
+                          <Currency amount={spendingLimits.dailySpendingLimit} />
+                          {spendingLimits.remainingLimits.totalSpending !== null && (
+                            <span className="text-green-600 ml-1">
+                              (<Currency amount={spendingLimits.remainingLimits.totalSpending} />{' '}
+                              left)
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+
+                    {spendingLimits.dailyNftLimit && (
+                      <div className="flex justify-between text-xs">
+                        <span>NFT Limit:</span>
+                        <span className="font-medium">
+                          <Currency amount={spendingLimits.spentToday.nftSpent} /> /{' '}
+                          <Currency amount={spendingLimits.dailyNftLimit} />
+                          {spendingLimits.remainingLimits.nft !== null && (
+                            <span className="text-green-600 ml-1">
+                              (<Currency amount={spendingLimits.remainingLimits.nft} /> left)
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+
+                    {!spendingLimits.dailySpendingLimit && !spendingLimits.dailyNftLimit && (
+                      <div className="text-xs text-muted-foreground text-center">
+                        No daily spending limits set
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="pt-4 border-t">
                   <div className="flex justify-between mb-2">

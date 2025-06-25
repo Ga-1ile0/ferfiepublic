@@ -33,8 +33,9 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { base } from 'viem/chains';
-import { parseEther } from 'viem';
+import { parseEther, parseUnits } from 'viem';
 import { useAuth } from '@/contexts/authContext';
+import { availableTokens } from '@/lib/tokens';
 import { Token, Symbol } from '@/components/shared/currency-symbol';
 import { toast } from 'react-toastify';
 import { useAccount, useSignMessage } from 'wagmi';
@@ -154,6 +155,14 @@ const ManageFunds = () => {
     }
   };
 
+  // Helper function to get token decimals
+  const getTokenDecimals = (tokenAddress: string): number => {
+    const token = availableTokens.find(
+      t => t.contract.toLowerCase() === tokenAddress.toLowerCase()
+    );
+    return token?.decimals || 18; // Default to 18 if not found
+  };
+
   // Prepare transaction calls for deposits
   const transactionCalls = React.useMemo(() => {
     if (!user?.familyAddress || !user?.family?.currencyAddress) {
@@ -181,6 +190,7 @@ const ManageFunds = () => {
 
     // Only include stablecoin transfer if value > 0
     if (activeTab === 'add' && value && Number(value) > 0) {
+      const tokenDecimals = getTokenDecimals(currencyAddress);
       calls.push({
         address: currencyAddress as `0x${string}`,
         functionName: 'transfer',
@@ -196,7 +206,7 @@ const ManageFunds = () => {
             type: 'function',
           },
         ] as const,
-        args: [familyAddress as `0x${string}`, parseEther(value)],
+        args: [familyAddress as `0x${string}`, parseUnits(value, tokenDecimals)],
       });
     }
 

@@ -1148,9 +1148,7 @@ export function ChildrenManagement() {
                       {permissions.cryptoTransferEnabled && (
                         <div className="space-y-4">
                           <div className="space-y-2">
-                            <Label htmlFor="max-transfer">
-                              Maximum Transfer Amount (per transaction)
-                            </Label>
+                            <Label htmlFor="max-transfer">Maximum Transfer Amount (per day)</Label>
                             <div className="relative">
                               <Input
                                 id="max-transfer"

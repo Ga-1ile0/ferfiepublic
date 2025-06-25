@@ -17,6 +17,7 @@ import { db } from '@/lib/db';
 import { createTransaction } from '@/server/transaction';
 import { TransactionType } from '@prisma/client';
 import { decryptSensitiveData } from '@/lib/kms-service';
+import { recordSpending } from '@/server/spending-tracker';
 
 // Constants
 //@ts-ignore
@@ -210,6 +211,18 @@ export async function executeSushiSwap(
       `Swap ${fromSymbol} to ${toSymbol}`,
       user.family?.id
     );
+
+    // 8. Record spending for daily limits tracking
+    if (isTrade) {
+      await recordSpending({
+        userId,
+        category: 'TRADING',
+        originalAmount: Number(amountInStable.toFixed(2)),
+        originalToken: 'USD',
+        amountInStablecoin: Number(amountInStable.toFixed(2)),
+        transactionHash: swapHash
+      });
+    }
 
     return { success: true };
   } catch (err: any) {

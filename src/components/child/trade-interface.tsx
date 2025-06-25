@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Progress } from '@/components/ui/progress';
 import { TokenSelectorDialog } from './trade/token-selector-dialog';
 import { TransactionHistory } from './trade/transaction-history';
 import { PriceChart } from './trade/price-graph';
@@ -24,7 +25,8 @@ import {
   getRealExchangeRate,
   getExchangeRate,
 } from '@/lib/tokens';
-import { getKidPermissions } from '@/server/permissions';
+import { getKidPermissions, getDailySpendingLimits } from '@/server/permissions';
+import { canMakeSpending, recordSpending } from '@/server/spending-tracker';
 import { executeSushiSwap } from '@/server/crypto/sushi-swap';
 import { ethers } from 'ethers';
 import { toast } from 'react-toastify';
@@ -52,6 +54,8 @@ export function TradeInterface() {
   const [isLoadingPermissions, setIsLoadingPermissions] = useState(true);
   const [isLoadingRate, setIsLoadingRate] = useState(false);
   const [isExecutingSwap, setIsExecutingSwap] = useState(false);
+  const [spendingLimits, setSpendingLimits] = useState<any>(null);
+  const [isLoadingLimits, setIsLoadingLimits] = useState(true);
 
   // Fetch token balance from contract
   async function fetchTokenBalance(tokenContract: string): Promise<number> {
@@ -67,6 +71,21 @@ export function TradeInterface() {
       return 0;
     }
   }
+
+  // Function to refresh spending limits
+  const refreshSpendingLimits = async () => {
+    if (!user?.id) return;
+    setIsLoadingLimits(true);
+    try {
+      const limitsResponse = await getDailySpendingLimits(user.id);
+      console.log('Limits response:', limitsResponse);
+      setSpendingLimits(limitsResponse.success ? limitsResponse.data : null);
+    } catch (error) {
+      console.error('Error fetching spending limits:', error);
+    } finally {
+      setIsLoadingLimits(false);
+    }
+  };
 
   // Fetch permissions to get allowed tokens
   useEffect(() => {
@@ -104,7 +123,15 @@ export function TradeInterface() {
     };
 
     fetchPermissions();
+    refreshSpendingLimits();
   }, [user?.id]);
+
+  // Refresh spending limits when tab becomes active
+  useEffect(() => {
+    if (activeTab === 'swap') {
+      refreshSpendingLimits();
+    }
+  }, [activeTab]);
 
   // Update exchange rate and token balances when tokens change
   useEffect(() => {
@@ -210,9 +237,24 @@ export function TradeInterface() {
         toast.error('Invalid token selection.');
         return;
       }
-      const exchangeRate = await getExchangeRate(toToken, user.family?.currencyAddress || '');
-      //Calculate amount in stable
-      const amountInStable = Number(toAmount) * exchangeRate;
+
+      // Check spending limits before executing the swap
+      const spendingCheck = await canMakeSpending(
+        user.id,
+        'TRADING',
+        Number(fromAmount),
+        fromToken
+      );
+
+      if (!spendingCheck.canSpend) {
+        toast.error(spendingCheck.reason || 'Cannot execute swap due to spending limits');
+        return;
+      }
+
+      // Calculate amount in stable using the correct exchange rate from fromToken to family currency
+      const familyCurrency = user.family?.currencyAddress || '';
+      const exchangeRateToStable = await getRealExchangeRate(fromToken, familyCurrency);
+      const amountInStable = Number(fromAmount) * exchangeRateToStable;
 
       // Calculate amounts with proper decimals
       const fromAmountWei = ethers.parseUnits(
@@ -264,10 +306,11 @@ export function TradeInterface() {
         setFromAmount('');
         setToAmount('');
 
-        // Refresh balances
+        // Refresh balances and spending limits
         const [newFromBalance, newToBalance] = await Promise.all([
           fetchTokenBalance(fromToken),
           fetchTokenBalance(toToken),
+          refreshSpendingLimits(),
         ]);
 
         setTokenBalances(prev => ({
@@ -568,6 +611,50 @@ export function TradeInterface() {
               </div>
             </CardFooter>
           </Card>
+
+          {/* Daily Spending Limits Display with Progress Bars */}
+          {spendingLimits && (
+            <Card className="mt-4">
+              <CardContent className="pt-2">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    {isLoadingLimits && (
+                      <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+                    )}
+                  </div>
+
+                  {spendingLimits.dailyTradingLimit && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Daily trading Limit</span>
+                        <span className="flex gap-1">
+                          <Currency amount={spendingLimits.spentToday.tradingSpent} /> /
+                          <Currency amount={spendingLimits.dailyTradingLimit} />
+                        </span>
+                      </div>
+                      <Progress
+                        value={
+                          (spendingLimits.spentToday.tradingSpent /
+                            spendingLimits.dailyTradingLimit) *
+                          100
+                        }
+                        className="h-2"
+                      />
+                      <div className="text-xs justify-end flex gap-1 w-full">
+                        <Currency amount={spendingLimits.remainingLimits.trading || 0} /> remaining
+                      </div>
+                    </div>
+                  )}
+
+                  {!spendingLimits.dailyTradingLimit && (
+                    <div className="text-sm text-muted-foreground text-center py-4">
+                      No daily trading limits set
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="history" className="pt-4 animate-in fade-in-50">

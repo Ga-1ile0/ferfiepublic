@@ -40,6 +40,14 @@ enum TransactionType {
     WITHDRAWAL
 }
 
+enum SpendingCategory {
+    TRADING
+    NFT
+    TRANSFER
+    GIFT_CARD
+    OTHER
+}
+
 enum TokenType {
     USDC
     EURC
@@ -120,6 +128,7 @@ model User {
     SidebarOption        SidebarOption[]
     authCode             ChildAuthCode?
     sessions             UserSession[]
+    dailySpending        DailySpending[]
 }
 
 model Family {
@@ -261,6 +270,12 @@ model Permission {
     maxGiftCardAmount       Float? // Weekly limit, null = unlimited
     requireGiftCardApproval Boolean @default(true)
 
+    // Daily spending limits (in family's stablecoin)
+    dailySpendingLimit      Float? // Total daily spending limit across all activities, null = unlimited
+    dailyTradingLimit       Float? // Daily trading limit, null = unlimited
+    dailyNftLimit           Float? // Daily NFT spending limit, null = unlimited
+    dailyTransferLimit      Float? // Daily crypto transfer limit, null = unlimited
+
     // Crypto transfer permissions
     cryptoTransferEnabled     Boolean  @default(false)
     maxTransferAmount         Float? // Per transfer limit, null = unlimited
@@ -362,4 +377,25 @@ model NftCollection {
     familyId        String
 
     @@unique([familyId, contractAddress])
+}
+
+model DailySpending {
+    id               String           @id @default(uuid())
+    userId           String
+    date             DateTime         @db.Date // Date only, no time
+    category         SpendingCategory
+    amountInStablecoin Float          // Amount spent in family's stablecoin
+    originalAmount   Float            // Original amount in the token used
+    originalToken    String           // Token symbol or contract address
+    exchangeRate     Float?           // Exchange rate used for conversion
+    transactionHash  String?          // Blockchain transaction hash
+    description      String?          // Description of the spending
+    createdAt        DateTime         @default(now())
+    updatedAt        DateTime         @updatedAt
+
+    // Relationships
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId, date])
+    @@index([userId, date, category])
 }
